@@ -13,6 +13,8 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
+import asyncio
 from dotenv import load_dotenv
 
 # [로컬 개발용] 상위 폴더(.env)의 환경변수 로드
@@ -244,6 +246,48 @@ async def delete_session(session_id: str):
         logger.info(f"Session {session_id} cleaned up successfully.")
         return {"status": "success", "message": "Session deleted"}
     return {"status": "not_found"}
+
+@app.post("/api/chat_stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    # 환경변수 실시간 갱신 및 에이전트 할당
+    load_dotenv(dotenv_path="../.env", override=True)
+    current_agent = get_or_create_agent(request.session_id)
+    
+    logger.info(f"[Stream] Session: {request.session_id} Started for: {request.message}")
+    
+    async def event_generator():
+        inputs = {"messages": [HumanMessage(content=request.message)], "next_step": None}
+        config = {"recursion_limit": 500, "configurable": {"thread_id": request.session_id}}
+        
+        try:
+            # LangGraph의 astream을 사용하여 각 노드(plan, generate, execute) 실행이 끝날 때마다 결과 획득
+            async for event in current_agent.app.astream(inputs, stream_mode="updates", config=config):
+                for node_name, node_data in event.items():
+                    if "messages" in node_data:
+                        for msg in node_data["messages"]:
+                            content = msg.content if hasattr(msg, "content") else str(msg)
+                            
+                            # 내부 시스템용 진행 트리거 메시지는 화면에 노출하지 않음
+                            if "Plan established. Please proceed" in content:
+                                continue
+                            
+                            if content.strip():
+                                chunk = {
+                                    "node": node_name,
+                                    "content": content
+                                }
+                                # SSE 규격에 맞추어 클라이언트에 전송
+                                yield f"data: {json.dumps(chunk)}\n\n"
+                                await asyncio.sleep(0.1) # 버퍼 밀림 방지
+                                
+            # 모든 그래프 실행이 끝나면 종료 신호 전송
+            yield f"data: {json.dumps({'node': 'END', 'content': '[DONE]'})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Stream error: {e}")
+            yield f"data: {json.dumps({'node': 'ERROR', 'content': f'Error: {str(e)}'})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 if __name__ == "__main__":
     import uvicorn
