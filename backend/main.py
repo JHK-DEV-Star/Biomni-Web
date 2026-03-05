@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.concurrency import run_in_threadpool
 from dotenv import load_dotenv
 
 # [로컬 개발용] 상위 폴더(.env)의 환경변수 로드
@@ -57,23 +58,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-agent: Optional[A1] = None
+active_sessions: Dict[str, A1] = {}
 
-def initialize_agent():
-    global agent
-    logger.info("Initializing Biomni Agent...")
-    try:
-        data_path = os.getenv("BIOMNI_DATA_PATH", "../biomni_data")
-        agent = A1(path=data_path)
-        logger.info("Biomni Agent initialized successfully.")
-    except Exception as e:
-        logger.error(f"Failed to initialize Biomni Agent: {e}")
-        agent = None
-
-initialize_agent()
+def get_or_create_agent(session_id: str) -> A1:
+    """세션 ID별로 독립된 에이전트와 작업 폴더를 할당하는 함수"""
+    if session_id not in active_sessions:
+        logger.info(f"Initializing new Biomni Agent for session: {session_id}")
+        base_data_path = os.getenv("BIOMNI_DATA_PATH", "../biomni_data")
+        
+        # 다중 사용자가 충돌하지 않도록 세션별 전용 폴더 경로 생성
+        user_data_path = os.path.join(base_data_path, session_id)
+        os.makedirs(user_data_path, exist_ok=True)
+        
+        try:
+            active_sessions[session_id] = A1(path=user_data_path)
+            logger.info(f"Biomni Agent initialized successfully for {session_id}.")
+        except Exception as e:
+            logger.error(f"Failed to initialize Biomni Agent for {session_id}: {e}")
+            raise HTTPException(status_code=500, detail="Agent initialization failed")
+            
+    return active_sessions[session_id]
 
 class ChatRequest(BaseModel):
     message: str
+    session_id: str = "default_session" # 클라이언트(또는 배치 스크립트)에서 세션 ID를 넘겨받음
 
 class ChatResponse(BaseModel):
     response: str
@@ -100,20 +108,25 @@ def sanitize_for_json(obj):
 @app.post("/api/chat", response_model=ChatResponse)
 @observe(name="Biomni Chat Interaction")
 async def chat_endpoint(request: ChatRequest):
-    if not agent:
-        initialize_agent()
-        if not agent:
-            raise HTTPException(status_code=500, detail="Agent not initialized")
+    # 1. 매 요청마다 .env 강제 재로드 (환경변수 실시간 반영)
+    load_dotenv(dotenv_path="../.env", override=True)
     
-    logger.info(f"Received request: {request.message}")
+    # 2. 세션 ID에 맞는 독립된 에이전트 호출
+    current_agent = get_or_create_agent(request.session_id)
+    
+    logger.info(f"[Session: {request.session_id}] Received request: {request.message}")
     
     try:
         langfuse_handler = langfuse_context.get_current_langchain_handler()
-        response_log, response_content = agent.go(request.message, callbacks=[langfuse_handler])
+        
+        # 3. ThreadPool을 사용하여 비동기 블로킹(Blocking) 방지 -> 병렬 처리 가능
+        response_log, response_content = await run_in_threadpool(
+            current_agent.go, request.message, callbacks=[langfuse_handler]
+        )
         
         langfuse_context.update_current_trace(
             output=str(response_content),
-            metadata={"full_log_length": len(response_log)}
+            metadata={"full_log_length": len(response_log), "session_id": request.session_id}
         )
 
         langfuse_context.flush()
