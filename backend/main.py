@@ -121,7 +121,10 @@ async def chat_endpoint(request: ChatRequest):
         
         # 3. ThreadPool을 사용하여 비동기 블로킹(Blocking) 방지 -> 병렬 처리 가능
         response_log, response_content = await run_in_threadpool(
-            current_agent.go, request.message, callbacks=[langfuse_handler]
+            current_agent.go, 
+            prompt=request.message, 
+            callbacks=[langfuse_handler], 
+            session_id=request.session_id
         )
         
         langfuse_context.update_current_trace(
