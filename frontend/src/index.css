@@ -1,3 +1,6 @@
+@import './styles/app.css';
+@import './graph/node-graph.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

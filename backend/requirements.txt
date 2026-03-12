@@ -1,59 +1,67 @@
+# ─── Core Framework ───
 fastapi
-uvicorn
+uvicorn[standard]
 python-dotenv
 pydantic
+pydantic-settings
+python-multipart
+httpx
+
+# ─── Database ───
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+# ─── LangChain (Biomni-Web compatible pins) ───
 langchain>=0.2.0
 langchain-core==1.2.8
 langchain-community==0.4.1
 langchain-openai
 langchain-anthropic
+langchain-google-genai
+
+# ─── LangGraph ───
 langgraph>=0.2.0
+
+# ─── Observability ───
 langfuse==2.60.10
 opentelemetry-distro
 opentelemetry-exporter-otlp
 opentelemetry-instrumentation-fastapi
-# Biomni Scientific libs
+
+# ─── Utilities ───
+pyyaml
+requests
+tqdm
+mcp
+nest-asyncio
+
+# ─── Biomni Scientific libs ───
 numpy
 pandas
 scipy
 biopython
 pyarrow
 fastparquet
-# 웹 크롤링 및 검색
 beautifulsoup4
 googlesearch-python
-
-# 생물정보학 관련 (로그에서 식별된 라이브러리)
 esm
-
-# 필요시 추가 (무거운 라이브러리는 로컬 설치 시 주의)
-# scanpy
 PyPDF2
 
-# --- 아래부터 Biomni 추가 패키지 ---
-# Core & LLM
+# ─── Biomni additional packages ───
 gradio>=5.0,<6.0
 langchain-ollama
-langchain-google-genai
 openai
 transformers
 sentencepiece
-mcp
 tooluniverse
-
-# Data Science & Web Tools
 numpy==2.1
-pandas
 matplotlib
-scipy
 statsmodels
 scikit-learn
 lxml
-tqdm
 seaborn
 networkx
-requests
-pyyaml
 jupyter
 notebook
 ipykernel
@@ -62,9 +70,8 @@ zarr>=2.0,<3.0
 lazyslide
 mi-googlesearch-python
 
-# Bioinformatics & Specialized Libraries
+# ─── Bioinformatics & Specialized ───
 scanpy
-biopython
 biopandas
 biotite
 opencv-python

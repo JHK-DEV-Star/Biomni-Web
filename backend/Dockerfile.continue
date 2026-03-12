@@ -1,0 +1,33 @@
+# Continue from pip install completed image (conda + apt-get + pip done)
+FROM cb24f418facc
+
+# 5. GitHub repos and fast install tools
+RUN pip install "git+https://github.com/YosefLab/popV.git@refs/pull/100/head" \
+    && pip install "git+https://github.com/pylabrobot/pylabrobot.git" \
+    && pip install uv \
+    && uv pip install transcriptformer --system \
+    && uv tool install arc-state
+
+# 6. R packages (CRAN and Bioconductor)
+RUN Rscript -e "install.packages(c('ggplot2', 'lme4', 'dplyr', 'tidyr', 'readr', 'stringr', 'Matrix', 'Rcpp', 'devtools', 'remotes', 'harmony', 'WGCNA', 'BiocManager'), repos='https://cran.rstudio.com/')" \
+    && Rscript -e "BiocManager::install(c('DESeq2', 'dada2', 'xcms', 'flowCore', 'edgeR', 'limma', 'clusterProfiler', 'impute', 'preprocessCore', 'GO.db', 'AnnotationDbi'), ask=FALSE)"
+
+# 7. FastTree CLI tool
+RUN mkdir -p /app/biomni_tools/bin \
+    && wget -O /app/biomni_tools/FastTree.c http://www.microbesonline.org/fasttree/FastTree.c \
+    && gcc -O3 -finline-functions -funroll-loops -Wall -o /app/biomni_tools/bin/FastTree /app/biomni_tools/FastTree.c -lm \
+    && rm -f /app/biomni_tools/FastTree.c
+ENV PATH="/app/biomni_tools/bin:${PATH}"
+
+# 8. OpenTelemetry auto-instrumentation
+RUN opentelemetry-bootstrap -a install
+
+# 9. Copy backend code
+COPY . /app/backend_code
+WORKDIR /app/backend_code
+
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+EXPOSE 8000
+ENTRYPOINT ["/app/entrypoint.sh"]
