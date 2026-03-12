@@ -1,15 +1,11 @@
+"""aigen_server — FastAPI application with 8 routers + WebSocket + DB."""
+
 import os
-import re
 import sys
 import logging
-import json
-import uuid
-import time
-import requests
-from datetime import datetime
-from typing import Optional, List, Any, Dict
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
@@ -17,10 +13,10 @@ from fastapi.responses import StreamingResponse
 import asyncio
 from dotenv import load_dotenv
 
-# [로컬 개발용] 상위 폴더(.env)의 환경변수 로드
+# Load environment variables
 load_dotenv(dotenv_path="../.env")
 
-# --- [Monkey Patching: 호환성 해결] ---
+# --- Monkey Patching: LangChain compatibility ---
 import langchain_core.callbacks
 import langchain_core.callbacks.base
 import langchain_core.agents
@@ -30,28 +26,65 @@ import langchain_core.outputs
 
 sys.modules["langchain.callbacks"] = langchain_core.callbacks
 sys.modules["langchain.callbacks.base"] = langchain_core.callbacks.base
-sys.modules["langchain.schema"] = langchain_core.messages 
+sys.modules["langchain.schema"] = langchain_core.messages
 sys.modules["langchain.schema.agent"] = langchain_core.agents
 sys.modules["langchain.schema.document"] = langchain_core.documents
 
-# [Langfuse & LangChain Integrations]
-from langchain_core.messages import SystemMessage, HumanMessage
-from langfuse.decorators import observe, langfuse_context
-from langfuse.callback import CallbackHandler
-
-# --- [Biomni Import] ---
-from biomni.agent.a1 import A1
-
-load_dotenv(dotenv_path="../.env")
-
+# --- Logging ---
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("BiomniWeb")
+logger = logging.getLogger("aigen")
 
-app = FastAPI()
+# --- Routers ---
+from routers import chat_sse, conversations, files, models_router, plan, settings, tools_router, ws_chat
 
-if os.path.exists("/app/data"):
-    app.mount("/data", StaticFiles(directory="/app/data"), name="data")
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: DB init on startup, cleanup on shutdown."""
+    logger.info("Starting aigen_server...")
+    try:
+        from db.database import init_db
+        await init_db()
+        logger.info("Database initialized.")
+    except Exception as e:
+        logger.warning(f"Database init skipped (not critical for skeleton): {e}")
+
+    # Initialize LLM Service
+    llm_svc = None
+    try:
+        from services.llm_service import get_llm_service
+        llm_svc = get_llm_service()
+        await llm_svc.ensure_initialized()
+        logger.info("LLM Service initialized.")
+    except Exception as e:
+        logger.warning(f"LLM Service init failed: {e}")
+
+    # Initialize Tool Service
+    try:
+        from services.tool_service import ToolService
+        tool_svc = ToolService.get_instance()
+        tool_svc.initialize(llm_service=llm_svc)
+        logger.info("Tool Service initialized.")
+    except Exception as e:
+        logger.warning(f"Tool Service init failed: {e}")
+
+    yield
+    logger.info("Shutting down aigen_server...")
+    try:
+        from db.database import close_db
+        await close_db()
+    except Exception:
+        pass
+
+
+app = FastAPI(
+    title="aigen_server",
+    description="Biomedical AI Agent Backend — FastAPI + WebSocket + SGLang",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# --- CORS ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -237,6 +270,49 @@ async def chat_endpoint(request: ChatRequest):
         logger.error(f"Error during execution: {e}")
         langfuse_context.update_current_trace(tags=["ERROR"], metadata={"error": str(e)})
         raise HTTPException(status_code=500, detail=str(e))
+# --- Static files ---
+uploads_dir = os.getenv("UPLOADS_DIR", "/app/uploads")
+if os.path.exists(uploads_dir):
+    app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+
+if os.path.exists("/app/data"):
+    app.mount("/data", StaticFiles(directory="/app/data"), name="data")
+
+outputs_dir = os.getenv("OUTPUTS_DIR", "/app/outputs")
+if os.path.exists(outputs_dir):
+    app.mount("/api/outputs", StaticFiles(directory=outputs_dir), name="outputs")
+
+# --- Register Routers ---
+app.include_router(conversations.router)
+app.include_router(chat_sse.router)
+app.include_router(models_router.router)
+app.include_router(settings.router)
+app.include_router(tools_router.router)
+app.include_router(files.router)
+app.include_router(plan.router)
+app.include_router(ws_chat.router)
+
+
+# --- Health Check ---
+@app.get("/health")
+async def health_check():
+    from sqlalchemy import text as sa_text
+    from services.llm_service import get_llm_service
+    from db.database import async_session_factory
+
+    # Check SGLang server
+    sglang_ok = await get_llm_service()._check_sglang_health()
+
+    # Check DB
+    db_ok = True
+    try:
+        async with async_session_factory() as session:
+            await session.execute(sa_text("SELECT 1"))
+    except Exception:
+        db_ok = False
+
+    return {"status": "ok", "sglang": sglang_ok, "db": db_ok}
+
 
 @app.delete("/api/session/{session_id}")
 async def delete_session(session_id: str):

@@ -1,0 +1,418 @@
+import { useState } from 'react';
+import { useAppContext } from '@/context/AppContext';
+import { useChatContext } from '@/context/ChatContext';
+import { useWebSocket } from '@/context/WebSocketContext';
+import { useTranslation } from '@/i18n';
+import { truncateConversation } from '@/api/conversations';
+import type { ToolCallEvent, ToolResultEvent, DetailPanelData, PlanStepResult } from '@/types';
+
+interface Props {
+  toolCalls: ToolCallEvent['tool_call'][];
+  toolResults?: ToolResultEvent['tool_result'][];
+  messageIndex: number;
+}
+
+interface PlanStepDisplay {
+  name: string;
+  description: string;
+  status: 'pending' | 'running' | 'completed' | 'error' | 'stopped';
+  tool?: string;
+}
+
+/** Map backend tool identifiers to human-readable labels */
+const TOOL_LABELS: Record<string, string> = {
+  code_gen: '코드 생성',
+  create_plan: '플랜 생성',
+  web_search: '웹 검색',
+};
+
+function getToolLabel(tool?: string): string {
+  if (!tool) return '';
+  return TOOL_LABELS[tool] ?? tool;
+}
+
+/**
+ * Plan Steps Box — renders create_plan tool call as a summary plan card
+ * in the chat message.
+ *
+ * Features:
+ * - Click entire box → switch Detail Panel to this plan's data
+ * - Inline step results with toggle (▼/▲)
+ * - Step hover actions: Retry (⟳), Ask (?), Detail (→)
+ * - Goal header: Ask About Plan (?), Regenerate Plan (↻)
+ * - Active plan highlighted with .plan-box-active CSS class
+ * - Running indicator: number + CSS pulse animation (not ⟳ character)
+ */
+export function PlanStepsBox({ toolCalls, toolResults, messageIndex }: Props) {
+  const { state: appState, dispatch: appDispatch } = useAppContext();
+  const { state: chatState, dispatch: chatDispatch } = useChatContext();
+  const { sendMessage, sendRaw } = useWebSocket();
+  const { t } = useTranslation();
+
+  // Find create_plan tool call
+  const createPlanCall = toolCalls.find((tc) => tc.name === 'create_plan');
+  if (!createPlanCall) return null;
+
+  const args = createPlanCall.arguments as {
+    goal?: string;
+    steps?: Array<{ name: string; description?: string }>;
+  };
+
+  if (!args?.steps?.length) return null;
+
+  // Merge with live detail panel data for step statuses + tools
+  const panelSteps = appState.detailPanelData?.steps;
+  const panelResults = appState.detailPanelData?.results;
+
+  const steps: PlanStepDisplay[] = args.steps.map((s, i) => {
+    const liveStatus = panelSteps?.[i]?.status;
+    const liveTool = panelSteps?.[i]?.tool;
+    const stepResult = toolResults?.find((tr) => tr.step === i + 1);
+
+    let status: PlanStepDisplay['status'] = 'pending';
+    if (liveStatus) {
+      status = liveStatus;
+    } else if (stepResult) {
+      status = stepResult.success ? 'completed' : 'error';
+    }
+
+    return {
+      name: s.name,
+      description: s.description || '',
+      status,
+      tool: liveTool || stepResult?.tool,
+    };
+  });
+
+  // Merge results from two sources: props (message history) + AppContext (live)
+  const getStepResults = (stepNum: number): PlanStepResult[] => {
+    const fromState = panelResults?.filter(r => r.step === stepNum) || [];
+    if (fromState.length > 0) return fromState;
+    // Fallback to toolResults from message
+    return (toolResults?.filter(tr => tr.step === stepNum) || []).map(tr => ({
+      step: tr.step ?? 0,
+      tool: tr.tool,
+      success: tr.success,
+      result: tr.result,
+    }));
+  };
+
+  const handleMoreDetail = () => {
+    const planData: DetailPanelData = {
+      goal: args.goal || 'Plan',
+      steps: steps.map(s => ({
+        name: s.name,
+        description: s.description,
+        status: s.status,
+        tool: s.tool,
+      })),
+      results: toolResults?.map(tr => ({
+        step: tr.step ?? 0,
+        tool: tr.tool,
+        success: tr.success,
+        result: tr.result,
+      })) || [],
+      codes: {},
+      analysis: '',
+      currentStep: steps.length,
+    };
+    toolResults?.forEach(tr => {
+      if ((tr as Record<string, unknown>).code && tr.step != null) {
+        planData.codes[tr.step - 1] = String((tr as Record<string, unknown>).code);
+      }
+    });
+    appDispatch({ type: 'SET_DETAIL_PANEL_DATA', payload: planData });
+    appDispatch({ type: 'SET_ACTIVE_DETAIL_TAB', payload: 'outputs' });
+  };
+
+  // Check if this plan box is currently active
+  const isActive = appState.detailPanelData?.goal === (args.goal || 'Plan') &&
+    appState.detailPanelData?.steps?.length === steps.length;
+
+  // Step action handlers
+  const handleRetryStep = (stepIndex: number) => {
+    const convId = chatState.conversationId;
+    if (!convId) return;
+    sendRaw('chat', {
+      conv_id: convId,
+      message: '',
+      mode: 'plan',
+      rerun: true,
+      rerun_steps: [{ name: steps[stepIndex].name, description: steps[stepIndex].description }],
+      rerun_goal: args.goal || '',
+      retry_step: stepIndex + 1,
+    });
+  };
+
+  const handleAskStep = (stepIndex: number) => {
+    const step = steps[stepIndex];
+    chatDispatch({
+      type: 'ADD_STEP_QUESTION',
+      payload: {
+        stepNum: stepIndex + 1,
+        tool: step.tool || '',
+        stepName: step.name,
+        context: step.description,
+      },
+    });
+  };
+
+  // Goal action handlers
+  const handleAskPlan = () => {
+    chatDispatch({
+      type: 'ADD_STEP_QUESTION',
+      payload: {
+        stepNum: 0,
+        tool: '',
+        stepName: args.goal || 'Plan',
+        context: '',
+      },
+    });
+  };
+
+  const handleRegenPlan = async () => {
+    const convId = chatState.conversationId;
+    if (!convId) return;
+
+    const userIdx = messageIndex - 1;
+    const userMsg = chatState.messages[userIdx];
+    if (!userMsg || userMsg.role !== 'user') return;
+
+    await truncateConversation(convId, userIdx).catch(() => {});
+    chatDispatch({ type: 'TRUNCATE_FROM', payload: userIdx });
+    appDispatch({ type: 'CLEAR_DETAIL_PANEL' });
+
+    const files = userMsg.files?.map((f) => ({
+      file: new File([], (f.name as string) || ''),
+      name: (f.name as string) || '',
+      type: (f.type as 'image' | 'audio' | 'document') || 'document',
+      uploadedFilename: (f.uploadId as string) || '',
+    }));
+    sendMessage(userMsg.content, files);
+  };
+
+  return (
+    <div
+      className={`plan-steps-box${isActive ? ' plan-box-active' : ''}`}
+      onClick={handleMoreDetail}
+    >
+      <div className="plan-goal plan-goal-row">
+        <span className="plan-goal-text">{args.goal || 'Plan'}</span>
+        <div className="plan-goal-actions">
+          <button
+            className="plan-ref-btn"
+            onClick={(e) => { e.stopPropagation(); handleAskPlan(); }}
+            title={t('tooltip.plan_ref') || 'Ask about this plan'}
+          >
+            ?
+          </button>
+          <button
+            className="plan-regen-btn"
+            onClick={(e) => { e.stopPropagation(); handleRegenPlan(); }}
+            title={t('tooltip.regenerate_plan') || 'Regenerate plan'}
+          >
+            ↻
+          </button>
+        </div>
+      </div>
+      <div className="plan-steps">
+        {steps.map((step, i) => (
+          <PlanStepItem
+            key={i}
+            step={step}
+            index={i}
+            stepResults={getStepResults(i + 1)}
+            onMoreDetail={handleMoreDetail}
+            onRetry={handleRetryStep}
+            onAsk={handleAskStep}
+            moreDetailLabel={t('label.more_detail')}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── PlanStepItem ───
+
+interface PlanStepItemProps {
+  step: PlanStepDisplay;
+  index: number;
+  stepResults: PlanStepResult[];
+  onMoreDetail: () => void;
+  onRetry: (index: number) => void;
+  onAsk: (index: number) => void;
+  moreDetailLabel: string;
+}
+
+function PlanStepItem({ step, index, stepResults, onMoreDetail, onRetry, onAsk, moreDetailLabel }: PlanStepItemProps) {
+  const [expanded, setExpanded] = useState(true);
+  const hasResults = stepResults.length > 0;
+
+  // Indicator: running keeps the number (CSS handles animation), others use symbols
+  const indicator = (() => {
+    switch (step.status) {
+      case 'completed': return '✓';
+      case 'error': return '!';
+      case 'stopped': return '◼';
+      case 'running': return index + 1;   // number + CSS pulse/spinner
+      default: return index + 1;           // pending: number
+    }
+  })();
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (hasResults) setExpanded(!expanded);
+  };
+
+  return (
+    <div className={`plan-step ${step.status}`} onClick={(e) => e.stopPropagation()}>
+      <div className="step-header">
+        <div className="step-header-main" onClick={handleToggle} style={{ cursor: hasResults ? 'pointer' : 'default' }}>
+          <div className="step-indicator">{indicator}</div>
+          <div className="step-content">
+            <div className="step-name">{step.name}</div>
+            {step.description && step.description !== step.name && (
+              <div className="step-description">{step.description}</div>
+            )}
+            {(step.tool || step.status === 'running') && (
+              <div className="step-tool">{getToolLabel(step.tool)}</div>
+            )}
+          </div>
+        </div>
+        {(step.status === 'completed' || step.status === 'error') && (
+          <div className="step-actions">
+            <button className="step-action-btn" onClick={() => onRetry(index)} title="Retry">⟳</button>
+            <button className="step-action-btn" onClick={() => onAsk(index)} title="Ask">?</button>
+            <button className="step-action-btn" onClick={onMoreDetail} title={moreDetailLabel}>→</button>
+          </div>
+        )}
+        {hasResults && (
+          <div className="step-toggle" onClick={handleToggle}>
+            {expanded ? '▲' : '▼'}
+          </div>
+        )}
+      </div>
+      {/* Inline step result */}
+      {hasResults && (
+        <div className="step-result" style={{ display: expanded ? 'block' : 'none' }}>
+          <StepResultContent results={stepResults} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Step Result Rendering ───
+
+function StepResultContent({ results }: { results: PlanStepResult[] }) {
+  return (
+    <>
+      {results.map((r, i) => (
+        <div key={i}>
+          {i > 0 && <hr className="tool-result-divider" />}
+          <SingleResultView result={r} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SingleResultView({ result }: { result: PlanStepResult }) {
+  const data = result.result as Record<string, unknown> | string | null | undefined;
+
+  // Error result
+  if (!result.success) {
+    if (!data) return <div className="step-error">Error</div>;
+    const errMsg = typeof data === 'object' && data !== null && 'error' in data
+      ? String((data as Record<string, unknown>).error)
+      : typeof data === 'string' ? data : JSON.stringify(data);
+    return <div className="step-error">{errMsg}</div>;
+  }
+
+  // String result
+  if (typeof data === 'string') {
+    const truncated = data.length > 300 ? data.slice(0, 300) + '...' : data;
+    return <div className="result-text">{truncated}</div>;
+  }
+
+  // Object result
+  if (typeof data === 'object' && data !== null) {
+    const obj = data as Record<string, unknown>;
+
+    // Code generation result
+    if (obj.code) {
+      const code = String(obj.code);
+      const lineCount = code.split('\n').length;
+      const lang = String(obj.language || 'python');
+      const fixAttempts = obj.fix_attempts as number | undefined;
+      return (
+        <div className="step-section-minimal">
+          <span className="section-label-minimal">Code Generated</span>
+          <div className="code-gen-summary">{lineCount} lines · {lang}</div>
+          {fixAttempts != null && fixAttempts > 0 && (
+            <div className="code-fix-info">Auto-corrected ({fixAttempts} attempt{fixAttempts > 1 ? 's' : ''})</div>
+          )}
+          {obj.execution && <ExecutionResultView execution={obj.execution as Record<string, unknown>} />}
+        </div>
+      );
+    }
+
+    // Structured result with title/summary
+    if (obj.title || obj.summary) {
+      const rawSummary = obj.summary
+        ? (Array.isArray(obj.summary) ? (obj.summary as string[]).join('\n') : String(obj.summary))
+        : '';
+      const abbreviated = rawSummary.length > 250 ? rawSummary.slice(0, 250) + '...' : rawSummary;
+
+      const duration = obj.duration as string | undefined;
+      const tokens = obj.tokens as string | undefined;
+      const metaText = [duration, tokens ? `${tokens} tokens` : ''].filter(Boolean).join(' · ');
+
+      return (
+        <div className="step-section-minimal">
+          {obj.title && <span className="section-label-minimal">{String(obj.title)}</span>}
+          {abbreviated && <div className="step-brief-summary">{abbreviated}</div>}
+          {metaText && <div className="result-meta-minimal">{metaText}</div>}
+        </div>
+      );
+    }
+
+    // Object with details array
+    if (obj.details && Array.isArray(obj.details)) {
+      const first = String(obj.details[0] || '');
+      const more = obj.details.length > 1 ? ' ...' : '';
+      return (
+        <div className="step-section-minimal">
+          <div className="step-brief-summary">{first}{more}</div>
+        </div>
+      );
+    }
+  }
+
+  // Fallback: JSON (truncated)
+  if (data == null) return null;
+  const json = JSON.stringify(data, null, 2);
+  const truncated = json && json.length > 500 ? json.slice(0, 500) + '\n...' : json;
+  return <pre className="result-json">{truncated}</pre>;
+}
+
+// ─── Execution Result (code output) ───
+
+function ExecutionResultView({ execution }: { execution: Record<string, unknown> }) {
+  const stdout = execution.stdout as string | undefined;
+  const figures = execution.figures as string[] | undefined;
+
+  return (
+    <div className="step-exec-result">
+      {stdout && stdout.trim() && (
+        <pre className="code-stdout">{stdout.length > 500 ? stdout.slice(0, 500) + '...' : stdout}</pre>
+      )}
+      {figures && figures.length > 0 && (
+        figures.map((f, i) => (
+          <img key={i} src={f} className="code-result-img" alt={`Figure ${i + 1}`} />
+        ))
+      )}
+    </div>
+  );
+}

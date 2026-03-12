@@ -1,0 +1,60 @@
+import { useCallback } from 'react';
+import { ArrowDown } from 'lucide-react';
+import { useChatContext } from '@/context/ChatContext';
+import { useSmartScroll } from '@/hooks/useSmartScroll';
+import { useWebSocket } from '@/context/WebSocketContext';
+import { truncateConversation } from '@/api/conversations';
+import { MessageBubble } from './MessageBubble';
+import { useTranslation } from '@/i18n';
+
+export function MessageList() {
+  const { state, dispatch } = useChatContext();
+  const { sendMessage } = useWebSocket();
+  const { t } = useTranslation();
+  const { containerRef, scrollToBottom, showScrollButton } = useSmartScroll(state.isStreaming);
+
+  const handleSaveEdit = useCallback(async (messageIndex: number, newContent: string) => {
+    const convId = state.conversationId;
+    if (!convId) return;
+    try {
+      await truncateConversation(convId, messageIndex);
+      dispatch({ type: 'TRUNCATE_FROM', payload: messageIndex });
+      sendMessage(newContent);
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: String(err) });
+    }
+  }, [state.conversationId, dispatch, sendMessage]);
+
+  if (state.messages.length === 0) {
+    return (
+      <div className="messages-container" ref={containerRef}>
+        <div className="welcome-message">
+          <h2>{t('welcome.title')}</h2>
+          <p>{t('welcome.subtitle')}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="messages-container" ref={containerRef}>
+      {state.messages.map((msg, idx) => (
+        <MessageBubble
+          key={`${state.conversationId || 'new'}-${idx}-${msg.role}`}
+          message={msg}
+          isLast={idx === state.messages.length - 1}
+          isStreaming={state.isStreaming && idx === state.messages.length - 1 && msg.role === 'assistant'}
+          messageIndex={idx}
+          onSaveEdit={handleSaveEdit}
+        />
+      ))}
+
+      {/* Scroll to bottom button */}
+      {showScrollButton && (
+        <button className="scroll-to-bottom-btn" onClick={scrollToBottom}>
+          <ArrowDown size={18} />
+        </button>
+      )}
+    </div>
+  );
+}

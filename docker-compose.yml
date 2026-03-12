@@ -1,13 +1,44 @@
 version: '3.8'
 
 services:
-  backend:
-    build: ./backend
-    container_name: biomni-backend
+  aigen-backend:
+    image: jiyeonl/biomni-web_backend
+    container_name: aigen-backend
     env_file:
       - .env
     environment:
-      - PYTHONPATH=/app/biomni_repo:$PYTHONPATH
+      - PYTHONPATH=/app/biomni_repo:/app/backend_code:$PYTHONPATH
       - BIOMNI_DATA_PATH=/app/data
+    volumes:
+      # Biomni source (from aigen_work/Biomni)
+      - ../Biomni:/app/biomni_repo
+      # Backend code (hot-reload)
+      - ./backend:/app/backend_code
+      # Data storage
+      - ./:/app/data
+      - ../uploads:/app/uploads
+      - ../outputs:/app/outputs
+      - ../logs:/app/logs
+      - ./reasoning_logs:/app/reasoning_logs
+      # Models directory (for local model folder detection)
+      - ../models:/app/models
     ports:
-      - "8002:8000"
+      - "8003:8000"
+    depends_on:
+      - aigen-db
+    restart: unless-stopped
+
+  aigen-db:
+    image: postgres:16-alpine
+    container_name: aigen-db
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=aigen
+      - POSTGRES_PASSWORD=aigen_pass
+      - POSTGRES_DB=aigen
+    volumes:
+      - aigen-pgdata:/var/lib/postgresql/data
+
+volumes:
+  aigen-pgdata:
