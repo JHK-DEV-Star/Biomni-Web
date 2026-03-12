@@ -1,26 +1,42 @@
-# docker-compose.yml
-version: '3.8'
-
 services:
-  backend:
-    build: ./backend
-    container_name: biomni-backend
+  aigen-backend:
+    image: jiyeonl/biomni-web_backend
+    container_name: aigen-backend
     env_file:
       - .env
     environment:
-      # [중요] 컨테이너가 마운트된 ../Biomni 폴더를 Python 경로로 인식하게 함
-      - PYTHONPATH=/app/biomni_repo:$PYTHONPATH
+      - PYTHONPATH=/app/biomni_repo:/app/backend_code:$PYTHONPATH
       - BIOMNI_DATA_PATH=/app/data
     volumes:
-      # 1. 로컬의 Biomni 원본 소스를 컨테이너 내부로 연결
+      # Biomni source (from aigen_work/Biomni)
       - ../Biomni:/app/biomni_repo
-      
-      # 2. 백엔드 서버 코드(main.py 등)도 로컬과 동기화 (수정 시 바로 반영)
+      # Backend code (hot-reload)
       - ./backend:/app/backend_code
-      
-      # 3. 데이터 저장소
+      # Data storage
       - ./:/app/data
-      - ./reasoning_logs:/app/logs
+      - ../uploads:/app/uploads
+      - ../outputs:/app/outputs
+      - ../logs:/app/logs
+      - ./reasoning_logs:/app/reasoning_logs
+      # Models directory (for local model folder detection)
+      - ../models:/app/models
     ports:
-      - "8002:8000"  # 로컬 8000포트를 컨테이너 8000포트와 연결
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      - "8003:8000"
+    depends_on:
+      - aigen-db
+    restart: unless-stopped
+
+  aigen-db:
+    image: postgres:16-alpine
+    container_name: aigen-db
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=aigen
+      - POSTGRES_PASSWORD=aigen_pass
+      - POSTGRES_DB=aigen
+    volumes:
+      - aigen-pgdata:/var/lib/postgresql/data
+
+volumes:
+  aigen-pgdata:
