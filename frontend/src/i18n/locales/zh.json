@@ -16,6 +16,7 @@
   "status.analyzing": "分析中...",
   "status.executing_plan": "正在执行 Plan...",
   "status.creating_plan": "正在创建计划...",
+  "status.plan_retry": "重新创建计划...",
   "status.generating_code": "正在生成代码...",
   "status.running": "运行中...",
   "status.completed": "已完成",

@@ -16,6 +16,7 @@
   "status.analyzing": "Analyserer...",
   "status.executing_plan": "Utfører plan...",
   "status.creating_plan": "Oppretter plan...",
+  "status.plan_retry": "Gjenskaper plan...",
   "status.generating_code": "Genererer kode...",
   "status.running": "Kjører...",
   "status.completed": "Fullført",

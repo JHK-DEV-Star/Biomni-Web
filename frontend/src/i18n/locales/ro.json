@@ -16,6 +16,7 @@
   "status.analyzing": "Se analizează...",
   "status.executing_plan": "Se execută planul...",
   "status.creating_plan": "Crearea planului...",
+  "status.plan_retry": "Regenerare plan...",
   "status.generating_code": "Se generează codul...",
   "status.running": "Se execută...",
   "status.completed": "Finalizat",

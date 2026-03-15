@@ -16,6 +16,7 @@
   "status.analyzing": "Аналіз...",
   "status.executing_plan": "Виконання плану...",
   "status.creating_plan": "Створення плану...",
+  "status.plan_retry": "Повторне створення плану...",
   "status.generating_code": "Генерація коду...",
   "status.running": "Виконується...",
   "status.completed": "Завершено",

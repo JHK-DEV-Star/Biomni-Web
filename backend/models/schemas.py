@@ -95,7 +95,7 @@ class ModelInfo(BaseModel):
     name: str
     display_name: str = ""  # Folder name for local models, same as name for API
     type: str  # "local" or "api"
-    provider: str  # "sglang", "openai", "anthropic", "gemini"
+    provider: str  # "vllm", "openai", "anthropic", "gemini"
     status: str = "available"
 
 
@@ -159,6 +159,8 @@ class ToolCallRequest(BaseModel):
 class ExecuteCodeRequest(BaseModel):
     code: str
     language: str = "python"
+    conv_id: Optional[str] = None
+    step_index: Optional[int] = None
 
 
 class NodeManifest(BaseModel):

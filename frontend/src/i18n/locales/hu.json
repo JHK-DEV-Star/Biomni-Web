@@ -16,6 +16,7 @@
   "status.analyzing": "Elemzés...",
   "status.executing_plan": "Terv végrehajtása...",
   "status.creating_plan": "Terv készítése...",
+  "status.plan_retry": "Terv újragenerálása...",
   "status.generating_code": "Kód generálása...",
   "status.running": "Futtatás...",
   "status.completed": "Befejezve",

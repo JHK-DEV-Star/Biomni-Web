@@ -16,6 +16,7 @@
   "status.analyzing": "جارٍ التحليل...",
   "status.executing_plan": "جارٍ تنفيذ الخطة...",
   "status.creating_plan": "إنشاء الخطة...",
+  "status.plan_retry": "إعادة إنشاء الخطة...",
   "status.generating_code": "جارٍ إنشاء الكود...",
   "status.running": "قيد التشغيل...",
   "status.completed": "مكتمل",

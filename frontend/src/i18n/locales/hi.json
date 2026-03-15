@@ -16,6 +16,7 @@
   "status.analyzing": "विश्लेषण हो रहा है...",
   "status.executing_plan": "Plan निष्पादित हो रहा है...",
   "status.creating_plan": "योजना बना रहे हैं...",
+  "status.plan_retry": "योजना पुनः बना रहा है...",
   "status.generating_code": "कोड उत्पन्न हो रहा है...",
   "status.running": "चल रहा है...",
   "status.completed": "पूर्ण",

@@ -194,7 +194,7 @@ function GeneralTab({
   t: (k: string) => string;
 }) {
   const update = useCallback(
-    (field: keyof DraftGeneral, value: string | number) => {
+    (field: keyof DraftGeneral, value: string | number | boolean) => {
       setDraft((prev) => ({ ...prev, [field]: value }));
     },
     [setDraft],
@@ -294,11 +294,6 @@ function GeneralTab({
           value={draft.maxContext}
           onChange={(e) => update('maxContext', parseInt(e.target.value) || 1024)}
         />
-        {draft.maxContext > 262144 && (
-          <span style={{ color: '#ff4444', fontSize: '12px' }}>
-            Max 256K exceeded. Capped to 262144.
-          </span>
-        )}
       </div>
 
       <div className="setting-section-divider" />

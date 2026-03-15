@@ -16,6 +16,7 @@
   "status.analyzing": "Đang phân tích...",
   "status.executing_plan": "Đang thực thi kế hoạch...",
   "status.creating_plan": "Đang tạo kế hoạch...",
+  "status.plan_retry": "Đang tạo lại kế hoạch...",
   "status.generating_code": "Đang tạo mã...",
   "status.running": "Đang chạy...",
   "status.completed": "Hoàn thành",

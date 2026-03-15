@@ -16,6 +16,7 @@
   "status.analyzing": "Analyserar...",
   "status.executing_plan": "Utför Plan...",
   "status.creating_plan": "Skapar plan...",
+  "status.plan_retry": "Återskapar plan...",
   "status.generating_code": "Genererar kod...",
   "status.running": "Körs...",
   "status.completed": "Slutförd",

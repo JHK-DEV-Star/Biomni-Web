@@ -16,6 +16,7 @@
   "status.analyzing": "กำลังวิเคราะห์...",
   "status.executing_plan": "กำลังดำเนินแผน...",
   "status.creating_plan": "กำลังสร้างแผน...",
+  "status.plan_retry": "สร้างแผนใหม่...",
   "status.generating_code": "กำลังสร้างโค้ด...",
   "status.running": "กำลังทำงาน...",
   "status.completed": "เสร็จสิ้น",

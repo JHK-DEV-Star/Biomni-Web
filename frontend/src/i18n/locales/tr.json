@@ -16,6 +16,7 @@
   "status.analyzing": "Analiz ediliyor...",
   "status.executing_plan": "Plan yürütülüyor...",
   "status.creating_plan": "Plan oluşturuluyor...",
+  "status.plan_retry": "Plan yeniden oluşturuluyor...",
   "status.generating_code": "Kod oluşturuluyor...",
   "status.running": "Çalışıyor...",
   "status.completed": "Tamamlandı",

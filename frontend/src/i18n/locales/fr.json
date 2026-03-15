@@ -16,6 +16,7 @@
   "status.analyzing": "Analyse en cours...",
   "status.executing_plan": "Exécution du Plan...",
   "status.creating_plan": "Création du plan...",
+  "status.plan_retry": "Régénération du plan...",
   "status.generating_code": "Génération du code...",
   "status.running": "En cours d'exécution...",
   "status.completed": "Terminé",

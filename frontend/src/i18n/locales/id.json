@@ -16,6 +16,7 @@
   "status.analyzing": "Menganalisis...",
   "status.executing_plan": "Menjalankan rencana...",
   "status.creating_plan": "Membuat rencana...",
+  "status.plan_retry": "Membuat ulang rencana...",
   "status.generating_code": "Membuat kode...",
   "status.running": "Berjalan...",
   "status.completed": "Selesai",

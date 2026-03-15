@@ -7,7 +7,7 @@
 import { createContext, useContext, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import { useChatContext } from '@/context/ChatContext';
 import { useAppContext } from '@/context/AppContext';
-import { createConversation } from '@/api/conversations';
+import { createConversation, renameConversation } from '@/api/conversations';
 import { WSClient } from '@/api/websocket';
 import type { PlanStep, PlanStepResult, PendingFile, ToolCallEvent, ToolResultEvent, PlanComplete } from '@/types';
 
@@ -63,7 +63,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
               goal?: string;
               steps?: Array<{ name: string; description: string }>;
             } | undefined;
+            console.log('[WS] create_plan detected, args:', args);
             if (args?.goal && args?.steps) {
+              console.log('[WS] Initializing detailPanelData:', args.steps.length, 'steps');
               const planSteps: PlanStep[] = args.steps.map((s) => ({
                 name: s.name,
                 description: s.description,
@@ -80,19 +82,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
                   currentStep: 0,
                 },
               });
+            } else {
+              console.warn('[WS] create_plan missing goal or steps!', toolCall);
             }
           }
           break;
         }
 
         case 'tool_result': {
-          console.log('[WS] tool_result:', eventData);
           const toolResult = (eventData.tool_result as Record<string, unknown>) ??
             (event.tool_result as Record<string, unknown>) ?? eventData;
+          console.log('[WS] tool_result:', { step: toolResult.step, tool: toolResult.tool, success: toolResult.success });
           chatDispatch({ type: 'ADD_TOOL_RESULT', payload: toolResult as ToolResultEvent['tool_result'] });
 
           const step = toolResult.step as number | undefined;
           if (step !== undefined) {
+            console.log('[WS] Updating step', step, 'to', toolResult.success ? 'completed' : 'error');
             const stepIdx = step - 1;
             appDispatch({
               type: 'UPDATE_STEP_STATUS',
@@ -118,10 +123,57 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             if (result && typeof result === 'object' && 'code' in result) {
               appDispatch({
                 type: 'SET_STEP_CODE',
-                payload: { stepIndex: stepIdx, code: String(result.code) },
+                payload: {
+                  stepIndex: stepIdx,
+                  code: String(result.code),
+                  language: String(result.language || 'python'),
+                  execution: result.execution as Record<string, unknown> | undefined,
+                  fixAttempts: (result.fix_attempts as number) || 0,
+                },
               });
             }
           }
+          break;
+        }
+
+        case 'plan_retry': {
+          console.log('[WS] plan_retry:', eventData);
+          chatDispatch({ type: 'PLAN_RETRY' });
+          break;
+        }
+
+        case 'tool_retrieval_start': {
+          appDispatch({ type: 'SET_TOOL_RETRIEVAL_STATUS', payload: 'running' });
+          break;
+        }
+
+        case 'tool_retrieval_done': {
+          appDispatch({ type: 'SET_TOOL_RETRIEVAL_STATUS', payload: 'done' });
+          const trDone = eventData.tool_retrieval_done as Record<string, unknown> | undefined;
+          const trTools = (trDone?.tools as string[]) ?? [];
+          const trDataLake = (trDone?.data_lake as string[]) ?? [];
+          const trLibraries = (trDone?.libraries as string[]) ?? [];
+          if (trTools.length > 0 || trDataLake.length > 0 || trLibraries.length > 0) {
+            appDispatch({
+              type: 'SET_RETRIEVAL_RESULT',
+              payload: { tools: trTools, dataLake: trDataLake, libraries: trLibraries },
+            });
+          }
+          break;
+        }
+
+        case 'step_execute': {
+          const stepExec = (eventData.step_execute as Record<string, unknown>) ?? eventData;
+          appDispatch({
+            type: 'ADD_STEP_EXECUTION',
+            payload: {
+              stepIndex: (stepExec.step as number) - 1,
+              code: (stepExec.code as string) || '',
+              observation: (stepExec.observation as string) || '',
+              success: (stepExec.success as boolean) ?? true,
+              iteration: (stepExec.iteration as number) ?? 0,
+            },
+          });
           break;
         }
 
@@ -130,26 +182,21 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           const stepStart = (eventData.step_start as Record<string, unknown>) ??
             (event.step_start as Record<string, unknown>) ?? eventData;
           const stepNum = stepStart.step as number;
+
+          // Auto-complete all previous running steps (mirrors original inference_ui behavior)
+          appDispatch({ type: 'COMPLETE_PREVIOUS_RUNNING_STEPS', payload: stepNum - 1 });
+
           chatDispatch({ type: 'SET_CURRENT_STEP', payload: stepNum });
           appDispatch({
             type: 'UPDATE_STEP_STATUS',
             payload: { stepIndex: stepNum - 1, status: 'running' },
           });
           appDispatch({ type: 'SET_CURRENT_STEP', payload: stepNum });
-          break;
-        }
 
-        case 'plan_complete': {
-          console.log('[WS] plan_complete:', eventData);
-          const planComplete = (eventData.plan_complete as Record<string, unknown>) ?? eventData;
-          if (planComplete) {
-            chatDispatch({ type: 'SET_PLAN_COMPLETE', payload: planComplete as unknown as PlanComplete });
-            
-            // Populate analysis in detail panel if provided
-            const analysis = planComplete.analysis as string | undefined;
-            if (analysis) {
-              appDispatch({ type: 'SET_ANALYSIS', payload: analysis });
-            }
+          // Store retrieved tools (same list every step, dispatch once on first step)
+          const retrievedTools = stepStart.retrieved_tools as string[] | undefined;
+          if (retrievedTools && retrievedTools.length > 0 && stepNum === 1) {
+            appDispatch({ type: 'SET_RETRIEVED_TOOLS', payload: retrievedTools });
           }
           break;
         }
@@ -158,10 +205,36 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           console.log('[WS] done:', eventData);
           chatDispatch({ type: 'SET_STREAMING', payload: false });
           appDispatch({ type: 'BUMP_CONVERSATIONS' }); // Refresh sidebar (title may have been updated)
+          // Mark running steps as stopped if user triggered stop
+          const stopped = (eventData.stopped as boolean) ?? (event.stopped as boolean);
+          if (stopped) {
+            appDispatch({ type: 'MARK_RUNNING_STEPS_STOPPED' });
+          }
           const planComplete = (eventData.plan_complete as Record<string, unknown>) ??
             (event.plan_complete as Record<string, unknown>);
           if (planComplete) {
+            // plan_complete means all steps finished — complete any remaining running steps
+            appDispatch({ type: 'COMPLETE_PREVIOUS_RUNNING_STEPS', payload: 999 });
             chatDispatch({ type: 'SET_PLAN_COMPLETE', payload: planComplete as unknown as PlanComplete });
+            // Populate codes in detail panel for Code tab
+            const codes = planComplete.codes as Record<string, unknown> | undefined;
+            if (codes) {
+              for (const [key, val] of Object.entries(codes)) {
+                const idx = Number(key);
+                if (typeof val === 'string') {
+                  appDispatch({ type: 'SET_STEP_CODE', payload: { stepIndex: idx, code: val } });
+                } else if (val && typeof val === 'object') {
+                  const c = val as Record<string, unknown>;
+                  appDispatch({ type: 'SET_STEP_CODE', payload: {
+                    stepIndex: idx,
+                    code: String(c.code),
+                    language: String(c.language || 'python'),
+                    execution: c.execution as Record<string, unknown> | undefined,
+                    fixAttempts: (c.fix_attempts as number) || 0,
+                  }});
+                }
+              }
+            }
             // Populate analysis in detail panel if provided
             const analysis = planComplete.analysis as string | undefined;
             if (analysis) {
@@ -226,7 +299,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       let convId = chatState.conversationId;
       if (!convId) {
         try {
-          const newConv = await createConversation();
+          // Build title for sidebar (use title param, NOT first_message to avoid duplicate DB save)
+          let title: string | undefined;
+          if (content) {
+            title = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+          } else if (files && files.length > 0) {
+            const isAllImages = files.every(f => f.type.startsWith('image/'));
+            title = isAllImages ? 'Image Chat' : files.map(f => f.name).join(', ').substring(0, 50);
+          }
+          const newConv = await createConversation(title ? { title } : undefined);
           convId = newConv.id;
           chatDispatch({ type: 'SET_CONVERSATION_ID', payload: convId });
           appDispatch({ type: 'BUMP_CONVERSATIONS' });
@@ -267,14 +348,33 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         setTimeout(() => { clearInterval(check); resolve(); }, 5000);
       });
 
+      // First message to a blank conversation — immediately update sidebar title
+      if (chatState.messages.length === 0) {
+        let titleToSet: string | undefined;
+        if (content) {
+          titleToSet = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+        } else if (files?.length) {
+          titleToSet = files.every(f => f.type.startsWith('image/'))
+            ? 'Image Chat'
+            : files.map(f => f.name).join(', ').substring(0, 50);
+        }
+        if (titleToSet) {
+          renameConversation(convId, titleToSet).catch(() => {});
+          appDispatch({ type: 'BUMP_CONVERSATIONS' });
+        }
+      }
+
       wsRef.current?.send('chat', {
         conv_id: convId,
         message: content,
         mode: chatState.mode,
         files: fileData,
       });
+
+      // Refresh sidebar immediately (title already set via first_message on creation)
+      appDispatch({ type: 'BUMP_CONVERSATIONS' });
     },
-    [chatState.conversationId, chatState.mode, chatDispatch],
+    [chatState.conversationId, chatState.mode, chatDispatch, appDispatch],
   );
 
   const sendRaw = useCallback(

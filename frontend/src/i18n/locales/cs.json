@@ -16,6 +16,7 @@
   "status.analyzing": "Analyzování...",
   "status.executing_plan": "Provádění Plan...",
   "status.creating_plan": "Vytváření plánu...",
+  "status.plan_retry": "Opětovné vytváření plánu...",
   "status.generating_code": "Generování kódu...",
   "status.running": "Běží...",
   "status.completed": "Dokončeno",

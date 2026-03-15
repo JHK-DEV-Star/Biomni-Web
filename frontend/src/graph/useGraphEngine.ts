@@ -2,7 +2,7 @@
 // Graph Engine Hook — state management for node graph
 // ============================================
 
-import { useReducer, useCallback, useRef } from 'react';
+import { useReducer, useCallback, useRef, useMemo } from 'react';
 import type { NodeData, ConnectionData, GraphState, SerializedGraphState, NodeStatus } from './types';
 import { PortTypes } from './port-types';
 import { getNodeDef } from './node-registry';
@@ -18,6 +18,7 @@ type GraphAction =
   | { type: 'SET_NODE_STATUS'; payload: { id: string; status: NodeStatus } }
   | { type: 'SET_NODE_TOOL'; payload: { id: string; tool: string } }
   | { type: 'SET_NODE_TITLE'; payload: { id: string; title: string } }
+  | { type: 'SET_NODE_DESCRIPTION'; payload: { id: string; description: string } }
   | { type: 'SET_PORT_VALUE'; payload: { nodeId: string; portName: string; value: unknown } }
   | { type: 'ADD_CONNECTION'; payload: ConnectionData }
   | { type: 'REMOVE_CONNECTION'; payload: string }
@@ -85,29 +86,34 @@ function graphReducer(state: GraphState, action: GraphAction): GraphState {
     }
 
     case 'SET_NODE_STATUS': {
+      const node = state.nodes.get(action.payload.id);
+      if (!node || node.status === action.payload.status) return state;
       const nodes = new Map(state.nodes);
-      const node = nodes.get(action.payload.id);
-      if (node) {
-        nodes.set(action.payload.id, { ...node, status: action.payload.status });
-      }
+      nodes.set(action.payload.id, { ...node, status: action.payload.status });
       return { ...state, nodes };
     }
 
     case 'SET_NODE_TOOL': {
+      const node = state.nodes.get(action.payload.id);
+      if (!node || node.tool === action.payload.tool) return state;
       const nodes = new Map(state.nodes);
-      const node = nodes.get(action.payload.id);
-      if (node) {
-        nodes.set(action.payload.id, { ...node, tool: action.payload.tool });
-      }
+      nodes.set(action.payload.id, { ...node, tool: action.payload.tool });
       return { ...state, nodes };
     }
 
     case 'SET_NODE_TITLE': {
+      const node = state.nodes.get(action.payload.id);
+      if (!node || node.title === action.payload.title) return state;
       const nodes = new Map(state.nodes);
-      const node = nodes.get(action.payload.id);
-      if (node) {
-        nodes.set(action.payload.id, { ...node, title: action.payload.title });
-      }
+      nodes.set(action.payload.id, { ...node, title: action.payload.title });
+      return { ...state, nodes };
+    }
+
+    case 'SET_NODE_DESCRIPTION': {
+      const node = state.nodes.get(action.payload.id);
+      if (!node || node.description === action.payload.description) return state;
+      const nodes = new Map(state.nodes);
+      nodes.set(action.payload.id, { ...node, description: action.payload.description });
       return { ...state, nodes };
     }
 
@@ -131,7 +137,29 @@ function graphReducer(state: GraphState, action: GraphAction): GraphState {
           return state;
         }
       }
+      // Rule 1: ref connection requires target node allowRef
+      if (conn.type === 'ref') {
+        const toNode = state.nodes.get(conn.to);
+        if (toNode) {
+          const toDef = getNodeDef(toNode.type);
+          if (!toDef?.allowRef) return state;
+        }
+        // Rule 3: ref maxAttachments limit (5)
+        let refCount = 0;
+        for (const existing of state.connections.values()) {
+          if (existing.to === conn.to && existing.toPort === conn.toPort && existing.type === 'ref') {
+            refCount++;
+          }
+        }
+        if (refCount >= 5) return state;
+        // Rule 4: forward ref 차단 — from(과거)의 depth < to(미래)의 depth
+        const fromNode = state.nodes.get(conn.from);
+        if (fromNode?.stepNum && toNode?.stepNum) {
+          if (parseFloat(fromNode.stepNum) >= parseFloat(toNode.stepNum)) return state;
+        }
+      }
       // Type compatibility check for flow connections
+      const connections = new Map(state.connections);
       if (conn.type === 'flow') {
         const fromNode = state.nodes.get(conn.from);
         const toNode = state.nodes.get(conn.to);
@@ -144,8 +172,14 @@ function graphReducer(state: GraphState, action: GraphAction): GraphState {
             return state;
           }
         }
+        // Rule 2: single flow per input port (auto-replace existing)
+        for (const [existingId, existing] of connections) {
+          if (existing.to === conn.to && existing.toPort === conn.toPort && existing.type === 'flow') {
+            connections.delete(existingId);
+            break;
+          }
+        }
       }
-      const connections = new Map(state.connections);
       connections.set(conn.id, conn);
       return { ...state, connections };
     }
@@ -194,9 +228,9 @@ function graphReducer(state: GraphState, action: GraphAction): GraphState {
         ...state,
         nodes,
         connections,
-        panX: action.payload.panX || 0,
-        panY: action.payload.panY || 0,
-        scale: action.payload.scale || 1,
+        panX: action.payload.panX ?? state.panX,
+        panY: action.payload.panY ?? state.panY,
+        scale: action.payload.scale ?? state.scale,
         selectedNodeId: null,
         selectedNodeIds: new Set(),
         selectedConnectionId: null,
@@ -235,8 +269,13 @@ function graphReducer(state: GraphState, action: GraphAction): GraphState {
       for (const id of sorted) {
         const n = nodes.get(id);
         if (n) {
-          nodes.set(id, { ...n, x: 0, y: currentY });
-          currentY += (n.height || 80) + gap;
+          if (n.userMoved) {
+            // 수동 이동 노드는 위치 유지, currentY만 갱신
+            currentY = Math.max(currentY, n.y + (n.height || 80) + gap);
+          } else {
+            nodes.set(id, { ...n, x: 0, y: currentY });
+            currentY += (n.height || 80) + gap;
+          }
         }
       }
       return { ...state, nodes };
@@ -257,7 +296,6 @@ function serializeState(s: GraphState): SerializedGraphState {
   return {
     nodes: Array.from(s.nodes.values()).map(n => ({ ...n })),
     connections: Array.from(s.connections.values()).map(c => ({ ...c })),
-    panX: s.panX, panY: s.panY, scale: s.scale,
   };
 }
 
@@ -292,6 +330,10 @@ export function useGraphEngine() {
 
   const setNodeTitle = useCallback((id: string, title: string) => {
     dispatch({ type: 'SET_NODE_TITLE', payload: { id, title } });
+  }, []);
+
+  const setNodeDescription = useCallback((id: string, description: string) => {
+    dispatch({ type: 'SET_NODE_DESCRIPTION', payload: { id, description } });
   }, []);
 
   const setPortValue = useCallback((nodeId: string, portName: string, value: unknown) => {
@@ -374,7 +416,7 @@ export function useGraphEngine() {
     dispatch({ type: 'SET_STATE', payload: snapshot });
   }, [state]);
 
-  return {
+  return useMemo(() => ({
     state,
     addNode,
     updateNode,
@@ -383,6 +425,7 @@ export function useGraphEngine() {
     setNodeStatus,
     setNodeTool,
     setNodeTitle,
+    setNodeDescription,
     setPortValue,
     addConnection,
     removeConnection,
@@ -398,5 +441,12 @@ export function useGraphEngine() {
     pushUndo,
     undo,
     redo,
-  };
+  }), [
+    state, addNode, updateNode, removeNode, removeNodes,
+    setNodeStatus, setNodeTool, setNodeTitle, setNodeDescription, setPortValue,
+    addConnection, removeConnection, setViewport, selectNode,
+    toggleSelectNode, setSelectedNodes, selectConnection,
+    relayoutVertical, clear, getSerializedState, setState,
+    pushUndo, undo, redo,
+  ]);
 }

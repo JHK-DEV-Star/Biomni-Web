@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     BIOMNI_LLM: str = "gpt-4o"
 
-    # --- SGLang (local model server) ---
-    SGLANG_BASE_URL: str = "http://host.docker.internal:30000/v1"
+    # --- vLLM (local model server) ---
+    VLLM_BASE_URL: str = "http://host.docker.internal:30000/v1"
     CUSTOM_MODEL_BASE_URL: str = "http://host.docker.internal:30000/v1"
     CUSTOM_MODEL_API_KEY: str = "None"
 
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     MODELS_DIR: str = "/app/models"
 
     # --- Active Model ---
-    ACTIVE_MODEL: str = "biomni-r0-32b"
+    ACTIVE_MODEL: str = "ministral-reasoning"
 
     model_config = {"env_file": "../.env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

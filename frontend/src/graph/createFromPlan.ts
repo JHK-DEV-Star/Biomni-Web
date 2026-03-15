@@ -19,15 +19,18 @@ export function createFromPlan(planData: PlanData): GraphBuildResult {
   const nodeWidth = 320;
   const edgeGap = 50;
   // Type-specific estimated heights for edge-to-edge equal spacing
-  const promptHeight = 90;    // textarea makes it taller
   const stepHeight = 80;      // header + description
   const analysisHeight = 60;  // compact
   const startX = 0;
   let currentY = 40;
   let connId = 1;
 
-  // Prompt input node
+  // Prompt input node — dynamic height based on text content
   const promptText = planData.userMessage || planData.goal || '';
+  const charsPerLine = Math.floor((nodeWidth - 24) / 7.5); // ~7.5px per char at 11px monospace
+  const textLineCount = promptText.split('\n').reduce((acc: number, line: string) =>
+    acc + Math.max(1, Math.ceil(Math.max(1, line.length) / charsPerLine)), 0);
+  const promptHeight = Math.max(90, 54 + textLineCount * 16); // header(~54px) + lines * lineHeight(16px)
   const promptNodeId = 'prompt-input';
   nodes.push({
     id: promptNodeId,

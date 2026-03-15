@@ -11,7 +11,9 @@ import { useGraphEngine } from '@/graph/useGraphEngine';
 import { createFromPlan } from '@/graph/createFromPlan';
 import { GraphCanvas } from '@/graph/GraphCanvas';
 import { GraphPopout } from './GraphPopout';
-import { toExecutionPlan, getExecutionPlanHash } from '@/graph/toExecutionPlan';
+import { toExecutionPlan, getExecutionPlanHash, canStartFromGraph } from '@/graph/toExecutionPlan';
+import { createConversation } from '@/api/conversations';
+import { initDynamicNodes } from '@/graph/nodes';
 import type { NodeStatus, SerializedGraphState } from '@/graph/types';
 
 function graphStateKey(convId: string, planIndex: number) {
@@ -20,15 +22,23 @@ function graphStateKey(convId: string, planIndex: number) {
 
 export function GraphTab() {
   const { state, dispatch: appDispatch } = useAppContext();
-  const { state: chatState } = useChatContext();
+  const { state: chatState, dispatch: chatDispatch } = useChatContext();
   const { sendRaw } = useWebSocket();
   const { t } = useTranslation();
   const engine = useGraphEngine();
+  const engineRef = useRef(engine);
+  engineRef.current = engine;
   const lastPlanRef = useRef<string>('');
   const lastPlanHashRef = useRef<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const convId = chatState.conversationId;
+  const [dynamicReady, setDynamicReady] = useState(false);
+
+  // Initialize dynamic nodes (Tool, Library, DataLake) from backend API
+  useEffect(() => {
+    initDynamicNodes().then(() => setDynamicReady(true));
+  }, []);
 
   // Try to restore from localStorage
   const restoredRef = useRef(false);
@@ -36,6 +46,7 @@ export function GraphTab() {
   useEffect(() => {
     restoredRef.current = false;
     lastPlanRef.current = '';
+    lastPlanHashRef.current = null;
   }, [convId]);
   useEffect(() => {
     if (!convId || restoredRef.current) return;
@@ -44,12 +55,15 @@ export function GraphTab() {
     if (stored) {
       try {
         const parsed: SerializedGraphState = JSON.parse(stored);
-        engine.setState(parsed);
+        engineRef.current.setState(parsed);
         restoredRef.current = true;
-        lastPlanHashRef.current = getExecutionPlanHash(engine.state.nodes, engine.state.connections);
+        // Compute hash from parsed data directly (state hasn't updated yet)
+        const nodesMap = new Map(parsed.nodes.map(n => [n.id, n]));
+        const connsMap = new Map(parsed.connections.map(c => [c.id, c]));
+        lastPlanHashRef.current = getExecutionPlanHash(nodesMap, connsMap);
       } catch { /* ignore corrupted data */ }
     }
-  }, [convId, engine]);
+  }, [convId]);
 
   // Save to localStorage on changes (debounced)
   useEffect(() => {
@@ -65,83 +79,143 @@ export function GraphTab() {
   }, [engine.state.nodes, engine.state.connections, engine.state.panX, engine.state.panY, engine.state.scale, convId, engine]);
 
   // Build graph from plan data when detailPanelData changes
+  // Uses engineRef to avoid stale closure issues (engine object changes on every state mutation)
   useEffect(() => {
+    const eng = engineRef.current;
     const data = state.detailPanelData;
-    if (!data?.steps?.length) return;
-
-    // Avoid rebuilding for the same plan
-    const planKey = JSON.stringify(data.steps.map((s: any) => 
-      typeof s === 'string' ? s : (s.name || s.task || s.description || s.tool || '')
-    ));
-
-    if (planKey === lastPlanRef.current) {
-      // Just update step statuses and tools
-      data.steps.forEach((step: any, i) => {
-        const nodeId = `step-${i + 1}`;
-        const status = typeof step === 'string' ? 'pending' : step.status;
-        const tool = typeof step === 'string' ? '' : step.tool;
-
-        if (status) {
-          engine.setNodeStatus(nodeId, step.status as NodeStatus);
-        }
-        if (tool) {
-          engine.setNodeTool(nodeId, step.tool);
-        }
-      });
+    if (!data?.steps?.length) {
+      // Plan cleared (e.g. conversation deleted) → clear graph engine too
+      if (eng.state.nodes.size > 0) {
+        eng.clear();
+        lastPlanRef.current = '';
+      }
       return;
     }
 
-    lastPlanRef.current = planKey;
+    // Avoid rebuilding for the same plan — just update statuses
+    const planKey = JSON.stringify(data.steps.map(s => `${s.name}|${s.description}`));
+    if (planKey === lastPlanRef.current) {
+      data.steps.forEach((step, i) => {
+        const nodeId = `step-${i + 1}`;
+        if (step.status) eng.setNodeStatus(nodeId, step.status as NodeStatus);
+        if (step.tool) eng.setNodeTool(nodeId, step.tool);
+      });
+      // Update analysis node status
+      const allDone = data.steps.every(
+        s => s.status === 'completed' || s.status === 'error' || s.status === 'stopped',
+      );
+      if (data.analysis && typeof data.analysis === 'string' && data.analysis.trim().length > 0) {
+        eng.setNodeStatus('analysis-node', 'completed' as NodeStatus);
+      } else if (allDone) {
+        eng.setNodeStatus('analysis-node', 'running' as NodeStatus);
+      }
+      return;
+    }
 
-    // If we already restored from localStorage, skip rebuilding
+    // If we already restored from localStorage, check if it matches the current plan
     if (restoredRef.current) {
       restoredRef.current = false;
-      lastPlanRef.current = planKey;
-      return;
+      // Verify restored graph matches current plan (count + names)
+      const restoredSteps = [...eng.state.nodes.values()]
+        .filter((n) => n.type === 'step')
+        .sort((a, b) => (a.stepNum || '').localeCompare(b.stepNum || ''));
+      const namesMatch = restoredSteps.length === data.steps.length &&
+        restoredSteps.every((n, i) => n.title === data.steps[i].name);
+      if (namesMatch) {
+        // Match — just update statuses and skip rebuild
+        lastPlanRef.current = planKey;
+        data.steps.forEach((step, i) => {
+          const nodeId = `step-${i + 1}`;
+          if (step.status) eng.setNodeStatus(nodeId, step.status as NodeStatus);
+          if (step.tool) eng.setNodeTool(nodeId, step.tool);
+        });
+        return;
+      }
+      // Mismatch — fall through to full rebuild
     }
 
     lastPlanRef.current = planKey;
 
     // Map DetailPanelData → PlanData format for createFromPlan
+    const lastUserMsg = chatState.messages
+      ?.filter((m: { role: string }) => m.role === 'user')
+      .pop()?.content || '';
+
     const planData = {
       goal: data.goal,
-      steps: data.steps.map((step: any, i) => {
-        const isString = typeof step === 'string';
-        return {
-          id: `${i + 1}`,
-          name: isString ? `Step ${i + 1}` : (step.name || step.task || step.title || `Step ${i + 1}`),
-          description: isString ? step : (step.description || step.details || step.name || ''),
-          tool: isString ? '' : (step.tool || step.action || ''),
-          status: isString ? 'pending' : (step.status || 'pending')
-        };
-      }),
+      userMessage: lastUserMsg,
+      steps: data.steps.map((step, i) => ({
+        id: `${i + 1}`,
+        name: step.name,
+        description: step.description,
+        tool: step.tool || '',
+      })),
     };
 
-    // Build new graph
-    const { nodes, connections } = createFromPlan(planData);
-    engine.clear();
-    for (const node of nodes) engine.addNode(node);
-    for (const conn of connections) {
-      engine.addConnection(conn.from, conn.fromPort, conn.to, conn.toPort, conn.type);
-    }
+    // Build new graph via single atomic setState (avoids stale closure from incremental mutations)
+    const { nodes: newNodes, connections: newConnections } = createFromPlan(planData);
+    const planManagedIds = new Set(newNodes.map(n => n.id));
 
-    // Apply initial step statuses and tools
-    data.steps.forEach((step: any, i) => {
-      const nodeId = `step-${i + 1}`;
-      const status = typeof step === 'string' ? 'pending' : step.status;
-      const tool = typeof step === 'string' ? '' : step.tool;
-      
-      if (status) {
-        engine.setNodeStatus(nodeId, status as NodeStatus);
+    // Preserve user-added nodes/connections (not managed by plan)
+    const userNodes = [...eng.state.nodes.values()]
+      .filter(n => !planManagedIds.has(n.id));
+    const userConnections = [...eng.state.connections.values()]
+      .filter(c => !planManagedIds.has(c.from) || !planManagedIds.has(c.to));
+
+    // Merge plan nodes with preserved user positions
+    const mergedNodes = newNodes.map(node => {
+      const existing = eng.state.nodes.get(node.id);
+      if (existing?.userMoved || existing?.userResized) {
+        return {
+          ...node,
+          x: existing.userMoved ? existing.x : node.x,
+          y: existing.userMoved ? existing.y : node.y,
+          width: existing.userResized ? existing.width : node.width,
+          height: existing.userResized ? existing.height : node.height,
+          userMoved: existing.userMoved,
+          userResized: existing.userResized,
+        };
       }
-      if (tool) {
-        engine.setNodeTool(nodeId, tool);
+      return node;
+    });
+
+    // Apply step statuses and tools to merged nodes
+    data.steps.forEach((step, i) => {
+      const nodeId = `step-${i + 1}`;
+      const node = mergedNodes.find(n => n.id === nodeId);
+      if (node) {
+        if (step.status) node.status = step.status as NodeStatus;
+        if (step.tool) node.tool = step.tool;
       }
     });
 
-    // Snapshot initial plan hash
-    lastPlanHashRef.current = getExecutionPlanHash(engine.state.nodes, engine.state.connections);
-  }, [state.detailPanelData, engine]);
+    // Update analysis node status
+    const allStepsDone = data.steps.length > 0 && data.steps.every(
+      s => s.status === 'completed' || s.status === 'error' || s.status === 'stopped',
+    );
+    const analysisNode = mergedNodes.find(n => n.id === 'analysis-node');
+    if (analysisNode) {
+      if (data.analysis && typeof data.analysis === 'string' && data.analysis.trim().length > 0) {
+        analysisNode.status = 'completed' as NodeStatus;
+      } else if (allStepsDone) {
+        analysisNode.status = 'running' as NodeStatus;
+      }
+    }
+
+    // Single atomic state update — no stale closure reads between mutations
+    eng.setState({
+      nodes: [...mergedNodes, ...userNodes],
+      connections: [...newConnections, ...userConnections],
+      panX: eng.state.panX,
+      panY: eng.state.panY,
+      scale: eng.state.scale,
+    });
+
+    // Snapshot plan hash from the new state (use newNodes/newConnections directly)
+    const nodesMap = new Map(mergedNodes.map(n => [n.id, n]));
+    const connsMap = new Map(newConnections.map(c => [c.id, c]));
+    lastPlanHashRef.current = getExecutionPlanHash(nodesMap, connsMap);
+  }, [state.detailPanelData, chatState.messages]);
 
   // Check if graph has been modified from original plan
   const hasExecutionLogicChanged = useCallback(() => {
@@ -168,6 +242,10 @@ export function GraphTab() {
   const handleRerunPlan = useCallback(() => {
     const plan = toExecutionPlan(engine.state.nodes, engine.state.connections);
     if (!plan || !convId) return;
+
+    // Save undo snapshot before rerun resets
+    engine.pushUndo();
+
     const logicChanged = hasExecutionLogicChanged();
 
     // Reset all nodes to pending
@@ -212,6 +290,67 @@ export function GraphTab() {
     lastPlanHashRef.current = getExecutionPlanHash(engine.state.nodes, engine.state.connections);
   }, [engine, convId, state.detailPanelData, hasExecutionLogicChanged, appDispatch, sendRaw]);
 
+  // Start execution directly from Graph (no existing conversation needed)
+  const handleStartFromGraph = useCallback(async () => {
+    const eng = engineRef.current;
+    const plan = toExecutionPlan(eng.state.nodes, eng.state.connections);
+    if (!plan || plan.steps.length === 0) return;
+
+    // Save undo snapshot & reset all nodes to pending
+    eng.pushUndo();
+    for (const nodeId of eng.state.nodes.keys()) {
+      eng.setNodeStatus(nodeId, 'pending');
+      eng.setNodeTool(nodeId, '');
+    }
+
+    // Initialize plan box
+    appDispatch({
+      type: 'SET_DETAIL_PANEL_DATA',
+      payload: {
+        goal: plan.goal || '',
+        steps: plan.steps.map(s => ({
+          name: s.name,
+          description: s.description,
+          status: 'pending' as const,
+        })),
+        results: [],
+        codes: {},
+        analysis: '',
+        currentStep: 0,
+      },
+    });
+
+    // Create conversation if needed
+    let targetConvId = convId;
+    if (!targetConvId) {
+      const title = plan.goal
+        ? plan.goal.substring(0, 50) + (plan.goal.length > 50 ? '...' : '')
+        : 'Graph Execution';
+      const newConv = await createConversation({ title });
+      targetConvId = newConv.id;
+      chatDispatch({ type: 'SET_CONVERSATION_ID', payload: targetConvId });
+      appDispatch({ type: 'BUMP_CONVERSATIONS' });
+      // Wait for WS connection (WebSocketContext connects on conversationId change)
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => { clearInterval(timer); resolve(); }, 100);
+        setTimeout(() => { clearInterval(timer); resolve(); }, 3000);
+      });
+    }
+
+    // Send as rerun — backend handles rerun=True without needing original chat message
+    sendRaw('chat', {
+      conv_id: targetConvId,
+      message: plan.goal || '',
+      mode: 'plan',
+      rerun: true,
+      rerun_steps: plan.steps,
+      rerun_goal: plan.goal || '',
+    });
+
+    // Update hash
+    lastPlanHashRef.current = getExecutionPlanHash(eng.state.nodes, eng.state.connections);
+  }, [convId, appDispatch, chatDispatch, sendRaw]);
+
   const hasNodes = engine.state.nodes.size > 0;
   const [isPopout, setIsPopout] = useState(false);
 
@@ -229,17 +368,27 @@ export function GraphTab() {
         <span className="graph-tab-label">{t('graph.editor_title')}</span>
         <div className="graph-tab-header-actions">
           <button className="graph-popout-btn" onClick={() => setIsPopout(true)} title={t('tooltip.popout')}>
-            ⇗
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 8V19a2 2 0 0 0 2 2h11" />
+              <rect x="8" y="3" width="13" height="13" rx="2" />
+              <path d="M12 12l3-3m0 0v2.5m0-2.5h-2.5" />
+            </svg>
           </button>
-          <button className="graph-rerun-btn" onClick={handleRerunPlan}>
-            {t('graph.rerun')}
-          </button>
+          {convId ? (
+            <button className="graph-rerun-btn" onClick={handleRerunPlan}>
+              {t('graph.rerun')}
+            </button>
+          ) : canStartFromGraph(engine.state.nodes, engine.state.connections) ? (
+            <button className="graph-start-btn" onClick={handleStartFromGraph}>
+              {t('graph.start') || '▶ Start'}
+            </button>
+          ) : null}
         </div>
       </div>
       {isPopout ? (
         <>
           <GraphPopout onClose={() => setIsPopout(false)}>
-            <GraphCanvas engine={engine} />
+            <GraphCanvas key="popout" engine={engine} skipInitialLayout={restoredRef.current} />
           </GraphPopout>
           <div className="graph-popout-notice">
             <span>{t('empty.graph_popout') || 'Graph is open in a separate window'}</span>
@@ -247,7 +396,7 @@ export function GraphTab() {
           </div>
         </>
       ) : (
-        <GraphCanvas engine={engine} />
+        <GraphCanvas key="inline" engine={engine} visible={state.activeDetailTab === 'graph'} skipInitialLayout={restoredRef.current} />
       )}
     </div>
   );

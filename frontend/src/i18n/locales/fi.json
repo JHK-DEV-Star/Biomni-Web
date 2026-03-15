@@ -16,6 +16,7 @@
   "status.analyzing": "Analysoidaan...",
   "status.executing_plan": "Suoritetaan suunnitelmaa...",
   "status.creating_plan": "Luodaan suunnitelmaa...",
+  "status.plan_retry": "Luodaan suunnitelmaa uudelleen...",
   "status.generating_code": "Luodaan koodia...",
   "status.running": "Suoritetaan...",
   "status.completed": "Valmis",

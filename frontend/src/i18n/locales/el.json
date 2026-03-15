@@ -16,6 +16,7 @@
   "status.analyzing": "Ανάλυση...",
   "status.executing_plan": "Εκτέλεση σχεδίου...",
   "status.creating_plan": "Δημιουργία πλάνου...",
+  "status.plan_retry": "Επαναδημιουργία πλάνου...",
   "status.generating_code": "Δημιουργία κώδικα...",
   "status.running": "Εκτελείται...",
   "status.completed": "Ολοκληρώθηκε",

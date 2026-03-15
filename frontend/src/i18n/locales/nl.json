@@ -16,6 +16,7 @@
   "status.analyzing": "Analyseren...",
   "status.executing_plan": "Plan uitvoeren...",
   "status.creating_plan": "Plan aanmaken...",
+  "status.plan_retry": "Plan opnieuw genereren...",
   "status.generating_code": "Code genereren...",
   "status.running": "Uitvoeren...",
   "status.completed": "Voltooid",
