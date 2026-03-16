@@ -8,7 +8,7 @@ import { useChatContext } from '@/context/ChatContext';
 import { useWebSocket } from '@/context/WebSocketContext';
 import { useTranslation } from '@/i18n';
 import { useGraphEngine } from '@/graph/useGraphEngine';
-import { createFromPlan } from '@/graph/createFromPlan';
+import { createFromPlan, createEmptyGraph } from '@/graph/createFromPlan';
 import { GraphCanvas } from '@/graph/GraphCanvas';
 import { GraphPopout } from './GraphPopout';
 import { toExecutionPlan, getExecutionPlanHash, canStartFromGraph } from '@/graph/toExecutionPlan';
@@ -30,6 +30,7 @@ export function GraphTab() {
   engineRef.current = engine;
   const lastPlanRef = useRef<string>('');
   const lastPlanHashRef = useRef<string | null>(null);
+  const manualGraphRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const convId = chatState.conversationId;
@@ -45,6 +46,7 @@ export function GraphTab() {
   // Reset restoration flag when conversation changes
   useEffect(() => {
     restoredRef.current = false;
+    manualGraphRef.current = false;
     lastPlanRef.current = '';
     lastPlanHashRef.current = null;
   }, [convId]);
@@ -85,12 +87,14 @@ export function GraphTab() {
     const data = state.detailPanelData;
     if (!data?.steps?.length) {
       // Plan cleared (e.g. conversation deleted) → clear graph engine too
-      if (eng.state.nodes.size > 0) {
+      // But preserve manually-created graphs (via "Create Empty Graph" button)
+      if (eng.state.nodes.size > 0 && !manualGraphRef.current) {
         eng.clear();
         lastPlanRef.current = '';
       }
       return;
     }
+    manualGraphRef.current = false; // plan data arrived → manual flag no longer needed
 
     // Avoid rebuilding for the same plan — just update statuses
     const planKey = JSON.stringify(data.steps.map(s => `${s.name}|${s.description}`));
@@ -351,6 +355,12 @@ export function GraphTab() {
     lastPlanHashRef.current = getExecutionPlanHash(eng.state.nodes, eng.state.connections);
   }, [convId, appDispatch, chatDispatch, sendRaw]);
 
+  const handleCreateEmptyGraph = useCallback(() => {
+    const { nodes, connections } = createEmptyGraph();
+    engine.setState({ nodes, connections, panX: 0, panY: 0, scale: 1 });
+    manualGraphRef.current = true;
+  }, [engine]);
+
   const hasNodes = engine.state.nodes.size > 0;
   const [isPopout, setIsPopout] = useState(false);
 
@@ -358,6 +368,9 @@ export function GraphTab() {
     return (
       <div className="detail-empty-state">
         <p>{t('empty.graph_hint')}</p>
+        <button className="graph-create-btn" onClick={handleCreateEmptyGraph}>
+          {t('graph.create_empty')}
+        </button>
       </div>
     );
   }

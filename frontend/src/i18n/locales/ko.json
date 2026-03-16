@@ -124,6 +124,8 @@
   "empty.graph_hint": "Plan이 생성되면 노드 그래프가\n여기에 표시됩니다.",
   "empty.graph_popout": "Graph가 별도 창에서 열려 있습니다.",
   "graph.editor_title": "플랜 그래프 에디터",
+  "graph.create_empty": "빈 그래프 만들기",
+  "graph.start": "▶ 시작",
   "graph.rerun": "재실행",
   "graph.detail.type": "유형",
   "graph.detail.status": "상태",

@@ -128,3 +128,53 @@ export function createFromPlan(planData: PlanData): GraphBuildResult {
 
   return { nodes, connections };
 }
+
+/**
+ * Create a minimal empty graph scaffold (Prompt + Analysis node).
+ * User can then add step nodes via the canvas CreateNodeMenu.
+ */
+export function createEmptyGraph(): GraphBuildResult {
+  const nodeWidth = 320;
+  const nodes: NodeData[] = [];
+  const connections: ConnectionData[] = [];
+  let currentY = 40;
+
+  // Prompt Input node (empty — user will type their question)
+  nodes.push({
+    id: 'prompt-input',
+    type: 'string',
+    title: 'Prompt',
+    x: 0,
+    y: currentY,
+    width: nodeWidth,
+    height: 90,
+    status: 'pending',
+    portValues: { out: '' },
+  });
+  currentY += 90 + 50;
+
+  // Analysis node
+  nodes.push({
+    id: 'analysis-node',
+    type: 'analyze',
+    title: 'Analysis',
+    tool: 'analyze_plan',
+    x: 0,
+    y: currentY,
+    width: nodeWidth,
+    height: 60,
+    status: 'pending',
+  });
+
+  // Connect Prompt → Analysis
+  connections.push({
+    id: 'conn-1',
+    from: 'prompt-input',
+    fromPort: 'out',
+    to: 'analysis-node',
+    toPort: 'in',
+    type: 'flow',
+  });
+
+  return { nodes, connections };
+}

@@ -120,6 +120,8 @@
   "empty.graph_hint": "Wenn ein Plan generiert wird, erscheint\nder Knotengraph hier.",
   "empty.graph_popout": "Der Graph ist in einem separaten Fenster geöffnet.",
   "graph.editor_title": "Plan-Graph-Editor",
+  "graph.create_empty": "Create Empty Graph",
+  "graph.start": "▶ Start",
   "graph.rerun": "Erneut ausführen",
   "empty.code_hint": "Code wird automatisch generiert, wenn ein Step abgeschlossen ist.",
   "empty.outputs_hint": "Step-Ergebnisse werden hier angezeigt.",

@@ -120,6 +120,8 @@
   "empty.graph_hint": "Când un Plan este generat, graful de noduri\nva apărea aici.",
   "empty.graph_popout": "Graful este deschis într-o fereastră separată.",
   "graph.editor_title": "Editor graf plan",
+  "graph.create_empty": "Create Empty Graph",
+  "graph.start": "▶ Start",
   "graph.rerun": "Reexecutare",
   "empty.code_hint": "Codul va fi generat automat când un Step se finalizează.",
   "empty.outputs_hint": "Rezultatele Step vor apărea aici.",

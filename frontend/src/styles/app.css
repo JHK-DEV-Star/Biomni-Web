@@ -5491,6 +5491,21 @@ body,
     line-height: 1.6;
     margin: 0;
 }
+.graph-create-btn {
+    margin-top: 12px;
+    padding: 6px 14px;
+    font-size: 12px;
+    border: 1px solid var(--primary-color);
+    background: var(--primary-color);
+    color: #fff;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+.graph-create-btn:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+}
 
 /* ============================================
    Graph Popout

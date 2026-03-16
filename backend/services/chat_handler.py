@@ -243,19 +243,33 @@ def _parse_plan_response(response: str, user_message: str) -> Optional[Dict[str,
     """Parse checklist plan from LLM response.
 
     Primary: numbered checklist with [ ] checkboxes and Goal: line.
-    Fallback: JSON tool_call format (backward compat for API models).
+    Fallback 1: extract plan from inside unclosed think block.
+    Fallback 2: JSON tool_call format (backward compat for API models).
     """
-    # Strip think blocks
+    # Strip think blocks (closed pairs — including </thought> variant)
     cleaned = re.sub(r'\[THINK\][\s\S]*?\[/THINK\]', '', response)
-    cleaned = re.sub(r'<think>[\s\S]*?</think>', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<think>[\s\S]*?</(?:think|thought)>', '', cleaned, flags=re.IGNORECASE)
+    # Strip unclosed trailing think
     cleaned = re.sub(r'\[THINK\][\s\S]*$', '', cleaned)
     cleaned = re.sub(r'<think>[\s\S]*$', '', cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.strip()
 
     # Primary: checklist / numbered list
     result = _extract_plan_from_text(cleaned, user_message)
+
+    # Fallback 1: if cleaned is empty/failed, try INSIDE the unclosed think block
     if not result:
-        # Fallback: JSON tool_call format
+        think_match = re.search(
+            r'(?:<think>|\[THINK\])([\s\S]*?)$', response, re.IGNORECASE
+        )
+        if think_match:
+            think_content = think_match.group(1).strip()
+            result = _extract_plan_from_text(think_content, user_message)
+            if result:
+                logger.info("Plan extracted from inside unclosed think block")
+
+    # Fallback 2: JSON tool_call format
+    if not result:
         result = _try_parse_tool_call(response, user_message)
 
     # Deduplicate steps by name (LLM sometimes repeats plan block)
@@ -330,8 +344,8 @@ def _extract_plan_from_text(text: str, user_message: str) -> Optional[Dict[str, 
     3. Bullet points (- ..., * ...)
     4. Bold items (**Step**: ...)
     """
-    # Strip think blocks (closed pairs only — safe)
-    cleaned = re.sub(r'<think>[\s\S]*?</think>', '', text, flags=re.IGNORECASE)
+    # Strip think blocks (closed pairs only — safe; includes </thought> variant)
+    cleaned = re.sub(r'<think>[\s\S]*?</(?:think|thought)>', '', text, flags=re.IGNORECASE)
     cleaned = re.sub(r'\[THINK\][\s\S]*?\[/THINK\]', '', cleaned, flags=re.IGNORECASE)
 
     lines = cleaned.strip().split("\n")
@@ -888,6 +902,12 @@ class ChatHandler:
             new_stops = [agent._exec_close]  # e.g. "[/EXECUTE]"
             if hasattr(agent, '_sol_close') and agent._sol_close:
                 new_stops.append(agent._sol_close)
+            # Defensive: if bracket format, also stop on angle-bracket variants
+            # in case model hallucinates wrong format
+            if agent._exec_close.startswith("["):
+                for extra in ["</execute>", "</EXECUTE>"]:
+                    if extra not in new_stops:
+                        new_stops.append(extra)
             for attr in ('stop', 'stop_sequences'):
                 if hasattr(agent.llm, attr):
                     setattr(agent.llm, attr, new_stops)

@@ -7,6 +7,16 @@ import { listStepOutputs, getStepOutputUrl } from '@/api/files';
 import { highlightCodeSyntax } from '@/utils/codeHighlight';
 import type { CodeData } from '@/types';
 
+/** Strip raw special-token tags that may leak through from model output */
+function stripRawTags(s: string): string {
+  return s
+    .replace(/(?:<\/?execute>|\[\/?EXECUTE\])/gi, '')
+    .replace(/(?:<\/?observation>|\[\/?OBSERVATION\])/gi, '')
+    .replace(/(?:<\/?think>|\[\/?THINK\])/gi, '')
+    .replace(/(?:<\/?solution>|\[\/?SOLUTION\])/gi, '')
+    .trim();
+}
+
 export function CodeTab() {
   const { state, dispatch: appDispatch } = useAppContext();
   const { state: chatState } = useChatContext();
@@ -218,12 +228,12 @@ function CodeBlock({ stepIndex, data, convId }: CodeBlockProps) {
             <div key={i} className={`code-intermediate-exec${exec.success ? '' : ' error'}`}>
               {exec.code && (
                 <div className="code-block-body" dangerouslySetInnerHTML={{
-                  __html: highlightCodeSyntax(exec.code, language),
+                  __html: highlightCodeSyntax(stripRawTags(exec.code), language),
                 }} />
               )}
               {exec.observation && (
                 <div className="code-result">
-                  <pre className="code-stdout">{exec.observation}</pre>
+                  <pre className="code-stdout">{stripRawTags(exec.observation)}</pre>
                 </div>
               )}
             </div>
@@ -268,7 +278,7 @@ function CodeResultSection({ result, figures, convId, stepIndex }: {
 
       {stdout && (
         <div className="code-result-stdout">
-          <pre className="code-stdout">{stdout}</pre>
+          <pre className="code-stdout">{stripRawTags(stdout)}</pre>
         </div>
       )}
 

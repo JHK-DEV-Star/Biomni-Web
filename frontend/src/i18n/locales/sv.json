@@ -120,6 +120,8 @@
   "empty.graph_hint": "När en Plan genereras visas\nnodgrafen här.",
   "empty.graph_popout": "Grafen är öppen i ett separat fönster.",
   "graph.editor_title": "Plangrafeditor",
+  "graph.create_empty": "Create Empty Graph",
+  "graph.start": "▶ Start",
   "graph.rerun": "Kör om",
   "empty.code_hint": "Kod genereras automatiskt när ett Step slutförs.",
   "empty.outputs_hint": "Step-resultat visas här.",

@@ -120,6 +120,8 @@
   "empty.graph_hint": "Wanneer een Plan wordt gegenereerd, verschijnt\nde nodegrafiek hier.",
   "empty.graph_popout": "Grafiek is geopend in een apart venster.",
   "graph.editor_title": "Plan grafiek editor",
+  "graph.create_empty": "Create Empty Graph",
+  "graph.start": "▶ Start",
   "graph.rerun": "Opnieuw uitvoeren",
   "empty.code_hint": "Code wordt automatisch gegenereerd wanneer een Step is voltooid.",
   "empty.outputs_hint": "Step-resultaten verschijnen hier.",

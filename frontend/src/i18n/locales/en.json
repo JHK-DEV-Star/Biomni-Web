@@ -124,6 +124,8 @@
   "empty.graph_hint": "When a Plan is generated, the node graph\nwill appear here.",
   "empty.graph_popout": "Graph is open in a separate window.",
   "graph.editor_title": "Plan Graph Editor",
+  "graph.create_empty": "Create Empty Graph",
+  "graph.start": "▶ Start",
   "graph.rerun": "Re-run Plan",
   "graph.detail.type": "Type",
   "graph.detail.status": "Status",

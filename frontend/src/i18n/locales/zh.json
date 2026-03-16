@@ -120,6 +120,8 @@
   "empty.graph_hint": "生成 Plan 后，\n节点图将显示在此处。",
   "empty.graph_popout": "图已在单独窗口中打开。",
   "graph.editor_title": "计划图编辑器",
+  "graph.create_empty": "Create Empty Graph",
+  "graph.start": "▶ Start",
   "graph.rerun": "重新执行",
   "empty.code_hint": "Step 完成后将自动生成代码。",
   "empty.outputs_hint": "Step 结果将显示在此处。",

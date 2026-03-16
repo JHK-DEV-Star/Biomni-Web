@@ -120,6 +120,8 @@
   "empty.graph_hint": "عند إنشاء Plan، سيظهر\nالرسم البياني للعقد هنا.",
   "empty.graph_popout": "الرسم البياني مفتوح في نافذة منفصلة.",
   "graph.editor_title": "محرر مخطط الخطة",
+  "graph.create_empty": "Create Empty Graph",
+  "graph.start": "▶ Start",
   "graph.rerun": "إعادة التشغيل",
   "empty.code_hint": "سيتم إنشاء الكود تلقائياً عند اكتمال Step.",
   "empty.outputs_hint": "ستظهر نتائج Step هنا.",
