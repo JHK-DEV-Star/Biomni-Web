@@ -126,7 +126,7 @@
   "graph.editor_title": "플랜 그래프 에디터",
   "graph.create_empty": "빈 그래프 만들기",
   "graph.start": "▶ 시작",
-  "graph.rerun": "재실행",
+  "graph.rerun": "플랜 실행",
   "graph.detail.type": "유형",
   "graph.detail.status": "상태",
   "graph.detail.description": "설명",

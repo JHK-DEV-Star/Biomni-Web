@@ -48,7 +48,7 @@ export type AppAction =
   | { type: 'SET_ACTIVE_DETAIL_TAB'; payload: AppState['activeDetailTab'] }
   | { type: 'UPDATE_STEP_STATUS'; payload: { stepIndex: number; status: PlanStep['status'] } }
   | { type: 'ADD_STEP_RESULT'; payload: PlanStepResult }
-  | { type: 'SET_STEP_CODE'; payload: { stepIndex: number; code: string; language?: string; execution?: Record<string, unknown>; fixAttempts?: number } }
+  | { type: 'SET_STEP_CODE'; payload: { stepIndex: number; code: string; language?: string; execution?: Record<string, unknown>; fixAttempts?: number; segments?: import('../types').CodeSegment[] } }
   | { type: 'SET_ANALYSIS'; payload: string }
   | { type: 'SET_CURRENT_STEP'; payload: number }
   | { type: 'UPDATE_STEP_TOOL'; payload: { stepIndex: number; toolName: string } }
@@ -131,9 +131,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_STEP_CODE': {
       if (!state.detailPanelData) return state;
-      const { stepIndex, code, language, execution, fixAttempts } = action.payload;
+      const { stepIndex, code, language, execution, fixAttempts, segments } = action.payload;
       const value: string | CodeData = language
-        ? { code, language, execution, fixAttempts: fixAttempts || 0, stepIndex }
+        ? { code, language, execution, fixAttempts: fixAttempts || 0, stepIndex, ...(segments ? { segments } : {}) }
         : code;
       return {
         ...state,

@@ -798,11 +798,8 @@ class ChatHandler:
             }
         })
 
-        # DB 저장 (think 블록 + tool_call 마커 — 대화 전환 시 plan + 사고과정 복원)
-        think_parts = re.findall(r'\[THINK\][\s\S]*?\[/THINK\]', full_response)
-        think_parts += re.findall(r'<think>[\s\S]*?</think>', full_response, re.IGNORECASE)
-        think_prefix = "\n".join(think_parts) + "\n" if think_parts else ""
-        plan_marker = f"{think_prefix}[PLAN_CREATE]{json.dumps(plan_data, ensure_ascii=False)}"
+        # DB 저장 (think 블록 제외 — step 실행 시 LLM이 plan 생성 reasoning을 보면 안됨)
+        plan_marker = f"[PLAN_CREATE]{json.dumps(plan_data, ensure_ascii=False)}"
         await conv_svc.add_message(UUID(conv_id), "assistant", plan_marker)
 
         # Initialize plan state for step execution
@@ -1211,10 +1208,18 @@ class ChatHandler:
             if sol_match:
                 final_result["solution"] = sol_match.group(1).strip()
 
+            # ── Determine step success ──
+            # Success = solution exists OR LLM marked step with [✓]
+            # (NOT based on code execution errors)
+            checked = _parse_checked_steps(full_response, steps)
+            step_checked = step_idx in checked
+            has_solution = bool(final_result.get("solution"))
+            step_success = has_solution or step_checked
+
             # ── Emit final tool_result for step completion ──
             # Always emit — contains code, reasoning, thinking, solution fields
             yield _ev("tool_result", {"tool_result": {
-                "success": not has_error,
+                "success": step_success,
                 "result": final_result,
                 "tool": tool_name,
                 "step": step_idx + 1,
@@ -1224,19 +1229,22 @@ class ChatHandler:
             plan_state["all_results"].append({
                 "step": step_idx + 1,
                 "tool": tool_name,
-                "success": not has_error,
+                "success": step_success,
                 "result": final_result,
             })
             # Fix imports in history too
             fixed_response, _ = _fix_biomni_imports(full_response, self._import_mapping)
-            history.append(AIMessage(content=fixed_response))
+            # Strip think blocks from history to save context and prevent LLM from seeing its own reasoning
+            clean_response = re.sub(r'\[THINK\][\s\S]*?\[/THINK\]', '', fixed_response).strip()
+            clean_response = re.sub(r'<think>[\s\S]*?</think>', '', clean_response, flags=re.IGNORECASE).strip()
+            history.append(AIMessage(content=clean_response))
 
             # ── Incremental save to DB (survives backend restart) ──
             await self._save_plan_complete(conv_id, conv_svc)
 
             # ── Detect [✓] checklist marks for multi-step completion ──
             # LLM may mark future steps as completed in its response
-            checked = _parse_checked_steps(full_response, steps)
+            # (checked already parsed above for step success determination)
             newly_checked = {idx for idx in checked if idx > step_idx
                              and idx not in plan_state.get("llm_completed_steps", set())}
             if newly_checked:
@@ -1611,13 +1619,16 @@ class ChatHandler:
             res = r.get("result", {})
             if isinstance(res, dict) and res.get("code"):
                 sidx = r.get("step", 1) - 1
-                codes[str(sidx)] = {
+                code_entry = {
                     "code": res["code"],
                     "language": res.get("language", "python"),
                     "execution": res.get("execution"),
                     "fixAttempts": res.get("fix_attempts", 0),
                     "stepIndex": sidx,
                 }
+                if res.get("segments"):
+                    code_entry["segments"] = res["segments"]
+                codes[str(sidx)] = code_entry
         # Build retrieval result from plan_state (persists across restart)
         retrieval = None
         if plan_state.get("_retrieved_tool_names"):

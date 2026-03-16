@@ -347,6 +347,16 @@ function ToolResultDetail({ result }: { result: unknown }) {
     }
   }
 
+  // Solution (fallback — when segments path doesn't cover it)
+  if (r.solution && typeof r.solution === 'string') {
+    const cleanSolution = stripSpecialTokens(r.solution as string).trim();
+    if (cleanSolution) {
+      parts.push(
+        <div key="solution" className="output-solution"><MarkdownContent text={cleanSolution} /></div>,
+      );
+    }
+  }
+
   // Stderr
   if (r.stderr && typeof r.stderr === 'string' && r.stderr.trim()) {
     parts.push(
@@ -402,7 +412,7 @@ function OutputCodeBlock({ code, language }: { code: string; language: string })
       <div className="code-block-header">
         <span className="code-block-title">Code</span>
         <span className="code-block-lang">{language}</span>
-        <button className={`code-copy-btn${copied ? ' copied' : ''}`} onClick={handleCopy}>
+        <button className={`code-copy-btn${copied ? ' copied' : ''}`} style={{ marginLeft: 'auto' }} onClick={handleCopy}>
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>

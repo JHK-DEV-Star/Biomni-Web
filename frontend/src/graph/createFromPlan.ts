@@ -133,13 +133,20 @@ export function createFromPlan(planData: PlanData): GraphBuildResult {
  * Create a minimal empty graph scaffold (Prompt + Analysis node).
  * User can then add step nodes via the canvas CreateNodeMenu.
  */
-export function createEmptyGraph(): GraphBuildResult {
+export function createEmptyGraph(promptText: string = ''): GraphBuildResult {
   const nodeWidth = 320;
   const nodes: NodeData[] = [];
   const connections: ConnectionData[] = [];
   let currentY = 40;
 
-  // Prompt Input node (empty — user will type their question)
+  // Prompt Input node — dynamic height based on text content
+  const charsPerLine = Math.floor((nodeWidth - 24) / 7.5);
+  const textLineCount = promptText
+    ? promptText.split('\n').reduce((acc: number, line: string) =>
+        acc + Math.max(1, Math.ceil(Math.max(1, line.length) / charsPerLine)), 0)
+    : 0;
+  const promptHeight = Math.max(90, 54 + textLineCount * 16);
+
   nodes.push({
     id: 'prompt-input',
     type: 'string',
@@ -147,11 +154,11 @@ export function createEmptyGraph(): GraphBuildResult {
     x: 0,
     y: currentY,
     width: nodeWidth,
-    height: 90,
+    height: promptHeight,
     status: 'pending',
-    portValues: { out: '' },
+    portValues: { out: promptText },
   });
-  currentY += 90 + 50;
+  currentY += promptHeight + 50;
 
   // Analysis node
   nodes.push({

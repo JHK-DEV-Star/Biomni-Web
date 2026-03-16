@@ -126,7 +126,7 @@
   "graph.editor_title": "Plan Graph Editor",
   "graph.create_empty": "Create Empty Graph",
   "graph.start": "▶ Start",
-  "graph.rerun": "Re-run Plan",
+  "graph.rerun": "Run Plan",
   "graph.detail.type": "Type",
   "graph.detail.status": "Status",
   "graph.detail.description": "Description",

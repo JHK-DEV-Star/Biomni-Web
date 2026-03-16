@@ -101,6 +101,7 @@ class ModelInfo(BaseModel):
 
 class ModelSwitchRequest(BaseModel):
     model_name: str
+    force: bool = False
 
 
 class ApiKeyRequest(BaseModel):

@@ -356,10 +356,13 @@ export function GraphTab() {
   }, [convId, appDispatch, chatDispatch, sendRaw]);
 
   const handleCreateEmptyGraph = useCallback(() => {
-    const { nodes, connections } = createEmptyGraph();
+    const lastUserMsg = (chatState.messages || [])
+      .filter((m: { role: string }) => m.role === 'user')
+      .pop()?.content || '';
+    const { nodes, connections } = createEmptyGraph(lastUserMsg);
     engine.setState({ nodes, connections, panX: 0, panY: 0, scale: 1 });
     manualGraphRef.current = true;
-  }, [engine]);
+  }, [engine, chatState.messages]);
 
   const hasNodes = engine.state.nodes.size > 0;
   const [isPopout, setIsPopout] = useState(false);

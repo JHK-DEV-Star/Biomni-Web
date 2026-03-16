@@ -14,19 +14,26 @@ export function ConnectionStatus() {
   const [showTooltip, setShowTooltip] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
 
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const h = await fetchHealth();
-        setHealth(h);
-      } catch {
-        setHealth({ status: 'error', vllm: false, db: false });
-      }
-    };
+  const check = async () => {
+    try {
+      const h = await fetchHealth();
+      setHealth(h);
+    } catch {
+      setHealth({ status: 'error', vllm: false, db: false });
+    }
+  };
 
+  useEffect(() => {
     check();
     intervalRef.current = setInterval(check, POLL_INTERVAL);
     return () => clearInterval(intervalRef.current);
+  }, []);
+
+  // Sync with model switching — immediate health check on switch start/end
+  useEffect(() => {
+    const onSwitch = () => check();
+    window.addEventListener('model-switching', onSwitch);
+    return () => window.removeEventListener('model-switching', onSwitch);
   }, []);
 
   if (!health) return null;

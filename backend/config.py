@@ -43,6 +43,7 @@ class Settings(BaseSettings):
 
     # --- Models Directory ---
     MODELS_DIR: str = "/app/models"
+    HOST_MODELS_PATH: str = ""  # Host path for Docker volume mount
 
     # --- Active Model ---
     ACTIVE_MODEL: str = "ministral-reasoning"

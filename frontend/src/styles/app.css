@@ -436,6 +436,55 @@ html, body {
     color: var(--text-color);
 }
 
+.model-switching-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--text-muted);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+}
+
+.model-switching-text {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
+.model-header-action {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+}
+
+.model-header-action:hover {
+    background: var(--hover-bg);
+    color: var(--text-color);
+}
+
+.model-header-action.spinning {
+    animation: spin 1s linear infinite;
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.model-header-action.cancel-btn {
+    animation: fadeSlideIn 0.25s ease-out;
+}
+
+@keyframes fadeSlideIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+}
+
 .model-selector {
     display: flex;
     align-items: center;
@@ -444,7 +493,11 @@ html, body {
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 6px;
-    transition: background 0.2s;
+    transition: background 0.2s, gap 0.2s ease;
+}
+
+.model-selector.switching {
+    cursor: default;
 }
 
 .model-selector:hover {
@@ -4592,6 +4645,36 @@ body,
     overflow: hidden;
 }
 
+.code-step-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+.code-step-header .code-block-lang {
+    font-weight: 400;
+}
+.code-groups {
+    display: flex;
+    flex-direction: column;
+}
+.code-group {
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+}
+.code-group:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+.code-group.error {
+    border-left: 3px solid var(--error);
+}
+
 .code-block-header {
     display: flex;
     align-items: center;
@@ -4763,15 +4846,16 @@ body,
 /* Intermediate execution blocks (streaming during step run) */
 .code-intermediate-execs {
     border-top: 1px solid var(--border-color);
-    padding: 4px 0;
+    padding: 8px 0;
 }
 .code-intermediate-exec {
-    border-bottom: 1px dashed var(--border-color);
-    padding: 4px 0;
-    opacity: 0.85;
+    border-bottom: 1px solid var(--border-color);
+    padding: 12px 0;
+    margin-bottom: 4px;
 }
 .code-intermediate-exec:last-child {
     border-bottom: none;
+    margin-bottom: 0;
 }
 .code-intermediate-exec.error .code-result {
     border-left: 3px solid var(--error-color, #e06c75);

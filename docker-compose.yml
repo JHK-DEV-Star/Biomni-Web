@@ -23,6 +23,13 @@ services:
       - ./reasoning_logs:/app/reasoning_logs
       # Models directory (for local model folder detection)
       - ../models:/app/models
+      # Docker socket (for dynamic vLLM container management)
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        pip install asyncpg docker -q 2>/dev/null || true
+        ./entrypoint.sh
     ports:
       - "8003:8000"
     depends_on:

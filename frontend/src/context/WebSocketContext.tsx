@@ -129,6 +129,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
                   language: String(result.language || 'python'),
                   execution: result.execution as Record<string, unknown> | undefined,
                   fixAttempts: (result.fix_attempts as number) || 0,
+                  segments: Array.isArray(result.segments) ? result.segments as import('@/types').CodeSegment[] : undefined,
                 },
               });
             }

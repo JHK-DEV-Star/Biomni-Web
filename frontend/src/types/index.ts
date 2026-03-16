@@ -142,6 +142,7 @@ export interface ModelInfo {
 
 export interface ModelSwitchRequest {
   model_name: string;
+  force?: boolean;
 }
 
 export interface ApiKeyRequest {
@@ -272,12 +273,18 @@ export interface ChatMessage {
   files?: Array<Record<string, unknown>>;
 }
 
+export interface CodeSegment {
+  type: 'thinking' | 'text' | 'code' | 'output' | 'solution';
+  content: string;
+}
+
 export interface CodeData {
   code: string;
   language: string;
   execution?: Record<string, unknown>;
   fixAttempts?: number;
   stepIndex: number;
+  segments?: CodeSegment[];
 }
 
 export interface CategorizedRetrieval {

@@ -120,6 +120,7 @@ export function PlanStepsBox({ toolCalls, toolResults, messageIndex }: Props) {
           execution: res.execution as Record<string, unknown> | undefined,
           fixAttempts: (res.fix_attempts as number) || 0,
           stepIndex: tr.step - 1,
+          ...(Array.isArray(res.segments) ? { segments: res.segments as import('@/types').CodeSegment[] } : {}),
         };
       }
     });
