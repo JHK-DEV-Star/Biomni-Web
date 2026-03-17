@@ -288,6 +288,11 @@ function ToolResultDetail({ result }: { result: unknown }) {
             <SpecialTokenBlock key={`seg-${i}`} label="Thinking" content={seg.content} variant="think" isStreaming={false} />,
           );
           break;
+        case 'planning':
+          parts.push(
+            <SpecialTokenBlock key={`seg-${i}`} label="Planning" content={seg.content} variant="think" isStreaming={false} />,
+          );
+          break;
         case 'text':
           parts.push(
             <div key={`seg-${i}`} className="output-reasoning"><MarkdownContent text={seg.content} /></div>,

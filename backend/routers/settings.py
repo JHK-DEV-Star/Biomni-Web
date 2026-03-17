@@ -1,5 +1,6 @@
 """Settings and system prompt endpoints."""
 
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -175,7 +176,9 @@ async def get_composed_prompts(db: AsyncSession = Depends(get_db)):
 
     # Load dynamic content for accurate viewer display
     app_settings = get_app_settings()
-    data_lake_path = app_settings.BIOMNI_DATA_PATH or ""
+    data_lake_path = os.path.join(
+        app_settings.BIOMNI_DATA_PATH or "", "biomni_data", "data_lake"
+    )
 
     from services.biomni_tools import BiomniToolLoader
     biomni_loader = BiomniToolLoader.get_instance()

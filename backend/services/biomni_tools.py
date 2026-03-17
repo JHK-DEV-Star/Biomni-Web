@@ -237,19 +237,20 @@ class BiomniToolLoader:
         lines.append("(none)")
         lines.append("")
         lines.append(
-            "For each category, respond with ONLY the indices of the relevant items in the following format:\n"
-            "TOOLS: [list of indices]\n"
-            "DATA_LAKE: [list of indices]\n"
-            "LIBRARIES: [list of indices]\n"
+            "Your response MUST contain ONLY the following three lines and NOTHING else:\n"
+            "TOOLS: [comma-separated indices]\n"
+            "DATA_LAKE: [comma-separated indices]\n"
+            "LIBRARIES: [comma-separated indices]\n"
             "\n"
-            "For example:\n"
+            "Example:\n"
             "TOOLS: [0, 3, 5, 7, 9]\n"
-            "DATA_LAKE: []\n"
+            "DATA_LAKE: [1, 2]\n"
             "LIBRARIES: []\n"
             "\n"
-            "If a category has no relevant items, use an empty list.\n"
+            "Do NOT write any explanation, reasoning, or text outside these three lines.\n"
+            "If a category has no relevant items, use an empty list [].\n"
             "\n"
-            "IMPORTANT GUIDELINES:\n"
+            "SELECTION GUIDELINES:\n"
             "1. Be generous but not excessive\n"
             "2. ALWAYS prioritize database tools for general queries\n"
             "3. Include all literature search tools for search/review queries\n"
@@ -297,30 +298,36 @@ class BiomniToolLoader:
 
             logger.info(f"Retrieval LLM response ({len(content)} chars): {content[:200]}")
 
-            # Parse TOOLS: [indices]
+            # Parse TOOLS: [indices] — try bracketed first, then bare numbers
             selected_tools: List[Dict[str, Any]] = []
             tools_match = re.search(r"TOOLS:\s*\[(.*?)\]", content, re.IGNORECASE)
+            if not tools_match:
+                tools_match = re.search(r"TOOLS:\s*([0-9][\d\s,]*)", content, re.IGNORECASE)
             if tools_match and tools_match.group(1).strip():
                 selected_tools = self._parse_indices(
                     tools_match.group(1), self._all_tools, max_tools
                 )
 
-            # Parse DATA_LAKE: [indices]
+            # Parse DATA_LAKE: [indices] — try bracketed first, then bare numbers
             selected_data_lake: List[Dict[str, str]] = []
             dl_match = re.search(r"DATA_LAKE:\s*\[(.*?)\]", content, re.IGNORECASE)
+            if not dl_match:
+                dl_match = re.search(r"DATA_LAKE:\s*([0-9][\d\s,]*)", content, re.IGNORECASE)
             if dl_match and dl_match.group(1).strip() and data_lake_items:
                 selected_data_lake = self._parse_indices(
                     dl_match.group(1), data_lake_items, 20
                 )
 
-            # Parse LIBRARIES: [indices] (empty for now, but ready)
+            # Parse LIBRARIES: [indices] — try bracketed first, then bare numbers
             selected_libraries: List[Dict[str, str]] = []
             lib_match = re.search(r"LIBRARIES:\s*\[(.*?)\]", content, re.IGNORECASE)
+            if not lib_match:
+                lib_match = re.search(r"LIBRARIES:\s*([0-9][\d\s,]*)", content, re.IGNORECASE)
             if lib_match and lib_match.group(1).strip():
                 # No library items to map yet; placeholder for future
                 pass
 
-            if selected_tools:
+            if selected_tools or selected_data_lake or selected_libraries:
                 logger.info(
                     f"LLM retrieval: {len(selected_tools)} tools, "
                     f"{len(selected_data_lake)} data_lake, "

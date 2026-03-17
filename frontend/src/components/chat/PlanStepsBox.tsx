@@ -124,6 +124,21 @@ export function PlanStepsBox({ toolCalls, toolResults, messageIndex }: Props) {
         };
       }
     });
+    // Preserve existing retrieval result and tool retrieval status
+    const existing = appState.detailPanelData;
+    if (existing?.retrievalResult) {
+      planData.retrievalResult = existing.retrievalResult;
+    }
+    if (existing?.retrievedTools) {
+      planData.retrievedTools = existing.retrievedTools;
+    }
+    if (existing?.toolRetrievalStatus) {
+      planData.toolRetrievalStatus = existing.toolRetrievalStatus;
+    }
+    // Preserve step executions
+    if (existing?.stepExecutions) {
+      planData.stepExecutions = existing.stepExecutions;
+    }
     appDispatch({ type: 'SET_DETAIL_PANEL_DATA', payload: planData });
     appDispatch({ type: 'SET_ACTIVE_DETAIL_TAB', payload: 'outputs' });
   };

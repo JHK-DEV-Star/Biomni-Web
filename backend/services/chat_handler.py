@@ -887,6 +887,7 @@ class ChatHandler:
             "goal": plan_data.get("goal", ""),
             "current_step": 0,
             "all_results": [],
+            "_plan_raw_response": full_response,
         }
 
     # ─── Phase B: Step Execution Loop ───
@@ -913,7 +914,9 @@ class ChatHandler:
         yield _ev("tool_retrieval_start", {"tool_retrieval_start": True})
 
         app_settings = get_settings()
-        data_lake_path = app_settings.BIOMNI_DATA_PATH or ""
+        data_lake_path = os.path.join(
+            app_settings.BIOMNI_DATA_PATH or "", "biomni_data", "data_lake"
+        )
 
         biomni_loader = BiomniToolLoader.get_instance()
         data_lake_items = scan_data_lake(data_lake_path)
@@ -1017,11 +1020,6 @@ class ChatHandler:
         available_tools_text = self._wrap_available_tools(tool_desc, behavior)
 
         for step_idx in range(plan_state["current_step"], len(steps)):
-            # Skip steps already completed by LLM in a previous step's response
-            if step_idx in plan_state.get("llm_completed_steps", set()):
-                logger.info(f"Step {step_idx+1} skipped (already completed by LLM)")
-                continue
-
             if self._stop_flags.get(conv_id):
                 await self._save_plan_complete(conv_id, conv_svc, stopped=True)
                 yield _ev("done", {"done": True, "stopped": True})
@@ -1253,6 +1251,7 @@ class ChatHandler:
 
             # ── Parse ordered segments for interleaved rendering ──
             segments = _parse_segments(full_response, behavior)
+
             if segments:
                 final_result["segments"] = segments
 
@@ -1353,39 +1352,6 @@ class ChatHandler:
 
             # ── Incremental save to DB (survives backend restart) ──
             await self._save_plan_complete(conv_id, conv_svc)
-
-            # ── Detect [✓] checklist marks for multi-step completion ──
-            # LLM may mark future steps as completed in its response
-            # (checked already parsed above for step success determination)
-            newly_checked = {idx for idx in checked if idx > step_idx
-                             and idx not in plan_state.get("llm_completed_steps", set())}
-            if newly_checked:
-                logger.info(
-                    f"[{conv_id}] LLM checked steps beyond current ({step_idx+1}): "
-                    f"{sorted(i+1 for i in newly_checked)}"
-                )
-                for skip_idx in sorted(newly_checked):
-                    yield _ev("step_start", {"step_start": {
-                        "step": skip_idx + 1,
-                        "retrieved_tools": [],
-                    }})
-                    yield _ev("tool_result", {"tool_result": {
-                        "success": True,
-                        "result": {
-                            "reasoning": f"Completed by LLM during step {step_idx + 1}",
-                            "solution": "",
-                        },
-                        "tool": "llm_inline_completion",
-                        "step": skip_idx + 1,
-                    }})
-                    plan_state["all_results"].append({
-                        "step": skip_idx + 1,
-                        "tool": "llm_inline_completion",
-                        "success": True,
-                        "result": {"reasoning": f"Completed by LLM during step {step_idx + 1}"},
-                    })
-                llm_done = plan_state.get("llm_completed_steps", set())
-                plan_state["llm_completed_steps"] = llm_done | newly_checked
 
         # All steps done — run analysis as post-processing step
         plan_complete_data = await self._save_plan_complete(conv_id, conv_svc)
